@@ -51,6 +51,8 @@ npm start
 2. Buat resource baru di Coolify dari repository tersebut.
 3. Pilih build pack Dockerfile.
 4. Tambahkan environment variable dari `coolify.example.env`.
+   Secret seperti `TELEGRAM_BOT_TOKEN` cukup dipakai sebagai runtime
+   environment variable, tidak perlu dijadikan build variable.
 5. Tambahkan persistent storage:
 
 ```text
@@ -78,6 +80,9 @@ Coolify akan memakai Docker `HEALTHCHECK` yang memanggil:
 
 Jika healthcheck gagal, cek env wajib, akses SQLite, dan mount persistent
 storage `/app/data`.
+
+Jika build pernah gagal karena dependency CSS tidak ditemukan, lakukan redeploy
+ulang. Bila cache Coolify masih memakai layer lama, pilih redeploy tanpa cache.
 
 ## Fitur utama
 

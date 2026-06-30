@@ -1,14 +1,18 @@
 FROM node:22-bookworm-slim AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm ci --include=dev
 
 FROM node:22-bookworm-slim AS builder
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV DATA_DIR=/tmp/tecloud-build-data
+ENV DATABASE_PATH=/tmp/tecloud-build-data/tecloud-build.sqlite
+ENV APP_BASE_URL=http://localhost:3000
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN npm run build
+RUN mkdir -p /tmp/tecloud-build-data
+RUN npm run build && rm -rf .next/standalone/data
 
 FROM node:22-bookworm-slim AS runner
 WORKDIR /app
