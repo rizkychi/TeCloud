@@ -3,7 +3,7 @@
 TeCloud adalah aplikasi file manager berbasis web untuk upload, membaca daftar,
 rename, replace, download, hapus file, akun pengguna, dashboard admin, dan link
 berbagi. File fisik disimpan melalui Telegram Bot API, sementara akun, kuota,
-metadata, analytics, session, OTP, dan aturan share disimpan di SQLite lokal.
+metadata, analytics, session, kode auth, dan aturan share disimpan di SQLite lokal.
 Untuk deploy Coolify, simpan database SQLite di persistent volume.
 
 ## Konfigurasi Telegram
@@ -14,6 +14,7 @@ Untuk deploy Coolify, simpan database SQLite di persistent volume.
 
 ```env
 TELEGRAM_BOT_TOKEN=123456:bot-token
+TELEGRAM_BOT_USERNAME=nama_bot_kamu
 TELEGRAM_CHAT_ID=@nama_channel_atau_chat_id
 ADMIN_TELEGRAM_CHAT_ID=123456789
 DEFAULT_USER_QUOTA_MB=1024
@@ -25,11 +26,22 @@ BACKUP_DIR=./data/backups
 
 Untuk channel, jadikan bot sebagai admin agar upload dan delete message bekerja.
 Untuk group atau private chat, gunakan chat id numerik jika username tidak ada.
-Untuk verifikasi akun, user harus pernah membuka chat dengan bot agar bot bisa
-mengirim kode OTP Telegram.
+`TELEGRAM_BOT_USERNAME` opsional, tetapi disarankan agar tombol buka bot di
+halaman verifikasi langsung mengarah ke bot yang benar.
+
+Alur pendaftaran tidak meminta Telegram Chat ID. User cukup isi username dan
+password, lalu halaman verifikasi menampilkan command seperti:
+
+```text
+/verify xxxxxxxxx
+```
+
+User mengirim command itu ke bot Telegram. Setelah itu, klik tombol cek di
+halaman verifikasi. Aplikasi akan membaca update bot Telegram dan menyimpan
+Telegram user ID dari pesan tersebut ke akun.
 
 User pertama otomatis menjadi admin. `ADMIN_TELEGRAM_CHAT_ID` juga bisa dipakai
-agar akun dengan chat id itu mendapat role admin saat daftar.
+agar akun dengan Telegram user ID itu mendapat role admin saat verifikasi.
 
 ## Menjalankan
 
@@ -87,7 +99,8 @@ ulang. Bila cache Coolify masih memakai layer lama, pilih redeploy tanpa cache.
 ## Fitur utama
 
 - Sign up, sign in, sign out, forgot password, dan reset password.
-- Verifikasi akun serta reset password memakai kode OTP dari bot Telegram.
+- Verifikasi akun memakai command ke bot Telegram, tanpa input Telegram Chat ID.
+- Reset password memakai kode OTP dari bot Telegram.
 - Session cookie HTTP-only dan password PBKDF2-SHA256 dengan salt.
 - CSRF token untuk request mutasi dan rate limit berbasis IP.
 - File per akun dengan pemeriksaan owner/admin di setiap route.
@@ -115,7 +128,7 @@ Di Coolify, kamu bisa membuat scheduled task dengan command yang sama.
 ## Keamanan Produksi
 
 - Semua aksi mutasi memakai header `x-csrf-token`.
-- Login, signup, OTP, upload, admin update, dan public download diberi rate
+- Login, signup, verifikasi Telegram, upload, admin update, dan public download diberi rate
   limit berbasis IP.
 - Public file dengan password menyimpan password sebagai hash, bukan plaintext.
 - `/api/health` memeriksa env wajib dan koneksi SQLite.

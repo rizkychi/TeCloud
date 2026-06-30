@@ -328,6 +328,24 @@ export async function activateUser(userId: string) {
   return findUser(userId);
 }
 
+export async function activateUserFromTelegram(
+  userId: string,
+  telegramChatId: string,
+  role?: UserRole,
+) {
+  const now = new Date().toISOString();
+  await ensureSchema();
+  const current = await findUser(userId);
+  if (!current) return null;
+
+  getDb()
+    .prepare(
+      "UPDATE users SET telegram_chat_id = ?, role = ?, status = 'active', verified_at = ?, updated_at = ? WHERE id = ?",
+    )
+    .run(telegramChatId, role ?? current.role, now, now, userId);
+  return findUser(userId);
+}
+
 export async function updateUserAdmin(
   userId: string,
   updates: Partial<Pick<AppUser, "quotaBytes" | "role" | "status">>,

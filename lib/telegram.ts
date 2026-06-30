@@ -10,7 +10,25 @@ type TelegramDocument = {
 
 type TelegramMessage = {
   message_id: number;
+  date?: number;
+  text?: string;
+  from?: {
+    id: number;
+    is_bot?: boolean;
+    username?: string;
+    first_name?: string;
+  };
+  chat?: {
+    id: number;
+    type?: string;
+    username?: string;
+  };
   document?: TelegramDocument;
+};
+
+type TelegramUpdate = {
+  update_id: number;
+  message?: TelegramMessage;
 };
 
 type TelegramResponse<T> = {
@@ -77,6 +95,61 @@ export async function sendTelegramMessage(
   });
 
   return readTelegramResponse<TelegramMessage>(response);
+}
+
+export async function getTelegramBotProfile(botToken: string) {
+  const response = await fetch(`https://api.telegram.org/bot${botToken}/getMe`);
+  return readTelegramResponse<{ username?: string; first_name?: string }>(response);
+}
+
+export async function getTelegramUpdates(botToken: string) {
+  const params = new URLSearchParams({
+    allowed_updates: JSON.stringify(["message"]),
+    limit: "100",
+    timeout: "0",
+  });
+  const response = await fetch(`https://api.telegram.org/bot${botToken}/getUpdates?${params}`);
+  return readTelegramResponse<TelegramUpdate[]>(response);
+}
+
+export function findVerificationCommand(
+  updates: TelegramUpdate[],
+  token: string,
+  botUsername?: string,
+) {
+  const normalizedToken = token.trim();
+  const mention = botUsername ? `@${botUsername.replace(/^@/, "")}`.toLowerCase() : "";
+
+  for (const update of updates) {
+    const message = update.message;
+    const text = message?.text?.trim();
+    if (!message || !text) continue;
+
+    const lowerText = text.toLowerCase();
+    const verifyCommand = mention
+      ? lowerText.startsWith(`/verify${mention} `)
+      : false;
+    const isVerify =
+      lowerText === `/verify ${normalizedToken}`.toLowerCase() ||
+      verifyCommand && lowerText.slice(`/verify${mention} `.length) === normalizedToken.toLowerCase();
+    const isStart =
+      lowerText === `/start verify_${normalizedToken}`.toLowerCase() ||
+      (mention && lowerText === `/start${mention} verify_${normalizedToken}`.toLowerCase());
+
+    if (!isVerify && !isStart) continue;
+
+    const userId = message.from?.id ?? message.chat?.id;
+    if (!userId) continue;
+
+    return {
+      telegramChatId: String(userId),
+      updateId: update.update_id,
+      username: message.from?.username,
+      firstName: message.from?.first_name,
+    };
+  }
+
+  return null;
 }
 
 export async function deleteTelegramMessage(

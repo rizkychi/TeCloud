@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
-import { getAdminTelegramChatId, getDefaultQuotaBytes, getTelegramConfig } from "../../../../lib/config";
+import { getDefaultQuotaBytes, getTelegramBotToken, getTelegramBotUsername } from "../../../../lib/config";
 import { countUsers, createAuthCode, createUser, findUserByUsername, logActivity } from "../../../../lib/file-store";
 import { guardMutation } from "../../../../lib/request-guards";
-import { codeExpiresAt, hashPassword, makeOtpCode, sha256 } from "../../../../lib/security";
-import { sendTelegramMessage } from "../../../../lib/telegram";
+import { codeExpiresAt, hashPassword, randomToken, sha256 } from "../../../../lib/security";
+import { getTelegramBotProfile } from "../../../../lib/telegram";
 
 export async function POST(request: Request) {
   const blocked = await guardMutation(request, {
@@ -13,26 +13,22 @@ export async function POST(request: Request) {
   });
   if (blocked) return blocked;
 
-  const config = getTelegramConfig();
-  if (!config) {
-    return NextResponse.json({ error: "Konfigurasi Telegram belum lengkap." }, { status: 400 });
+  const botToken = getTelegramBotToken();
+  if (!botToken) {
+    return NextResponse.json({ error: "TELEGRAM_BOT_TOKEN belum diatur." }, { status: 400 });
   }
 
   const payload = (await request.json().catch(() => ({}))) as {
-    name?: string;
     username?: string;
-    telegramChatId?: string;
     password?: string;
   };
 
-  const name = payload.name?.trim();
   const username = payload.username?.trim().toLowerCase();
-  const telegramChatId = payload.telegramChatId?.trim();
   const password = payload.password || "";
 
-  if (!name || !username || !telegramChatId || password.length < 8) {
+  if (!username || password.length < 8) {
     return NextResponse.json(
-      { error: "Isi nama, username, Telegram chat id, dan password minimal 8 karakter." },
+      { error: "Isi username dan password minimal 8 karakter." },
       { status: 400 },
     );
   }
@@ -45,14 +41,14 @@ export async function POST(request: Request) {
   const passwordSecret = await hashPassword(password);
   const userId = crypto.randomUUID();
   const now = new Date().toISOString();
-  const role = totalUsers === 0 || telegramChatId === getAdminTelegramChatId() ? "admin" : "user";
-  const code = makeOtpCode();
+  const role = totalUsers === 0 ? "admin" : "user";
+  const token = randomToken(9);
 
   await createUser({
     id: userId,
-    name,
+    name: username,
     username,
-    telegramChatId,
+    telegramChatId: "",
     passwordHash: passwordSecret.hash,
     passwordSalt: passwordSecret.salt,
     role,
@@ -64,20 +60,27 @@ export async function POST(request: Request) {
     id: crypto.randomUUID(),
     userId,
     purpose: "signup",
-    codeHash: await sha256(code),
+    codeHash: await sha256(token),
     createdAt: now,
     expiresAt: codeExpiresAt(),
   });
-  await sendTelegramMessage(
-    config,
-    telegramChatId,
-    `Kode verifikasi TeCloud kamu: ${code}. Kode berlaku 10 menit.`,
-  );
   await logActivity({ userId, type: "signup_requested" });
+
+  const configuredBotUsername = getTelegramBotUsername();
+  const detectedBotUsername = configuredBotUsername
+    ? configuredBotUsername
+    : await getTelegramBotProfile(botToken).then((bot) => bot.username || "").catch(() => "");
+  const verifyCommand = `/verify ${token}`;
+  const botUrl = detectedBotUsername
+    ? `https://t.me/${detectedBotUsername}?start=verify_${encodeURIComponent(token)}`
+    : null;
 
   return NextResponse.json({
     ok: true,
     username,
-    message: "Kode verifikasi sudah dikirim lewat bot Telegram.",
+    token,
+    verifyCommand,
+    botUrl,
+    message: "Kirim command verifikasi ke bot Telegram untuk mengaktifkan akun.",
   });
 }

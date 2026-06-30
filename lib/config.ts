@@ -11,6 +11,14 @@ export function getTelegramConfig(): TelegramConfig | null {
   return { botToken, chatId };
 }
 
+export function getTelegramBotToken() {
+  return process.env.TELEGRAM_BOT_TOKEN?.trim() || "";
+}
+
+export function getTelegramBotUsername() {
+  return (process.env.TELEGRAM_BOT_USERNAME || "").trim().replace(/^@/, "");
+}
+
 export function getDefaultQuotaBytes() {
   const raw = process.env.DEFAULT_USER_QUOTA_MB;
   const quotaMb = Number(raw || 1024);

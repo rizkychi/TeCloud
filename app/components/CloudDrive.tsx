@@ -38,6 +38,12 @@ type StoredFile = {
 type Notice = { tone: "good" | "warn" | "bad"; text: string };
 type AuthMode = "signin" | "signup" | "verify" | "forgot" | "reset";
 type MainView = "files" | "admin";
+type PendingVerification = {
+  username: string;
+  token: string;
+  verifyCommand: string;
+  botUrl?: string | null;
+};
 
 type AdminSummary = {
   totalUsers: number;
@@ -68,6 +74,9 @@ function Icon({ name }: { name: string }) {
     check: "m5 13 4 4L19 7",
     close: "M6 6l12 12M18 6 6 18",
     share: "M8 12h8M13 7l5 5-5 5M6 5h5M6 19h5",
+    copy: "M8 8h10v12H8zM6 16H4V4h12v2",
+    telegram: "M21 4 3 11l5 2 2 5 3-4 4 3 3-17Z",
+    alert: "M12 9v4m0 4h.01M10.3 4.6 2.2-1.2 2.2 1.2 7.2 12.5-2.2 3.8H5.8l-2.2-3.8z",
   };
 
   return (
@@ -93,6 +102,16 @@ function getType(file: StoredFile) {
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+}
+
+function extractVerifyToken(value: string) {
+  const text = value.trim();
+  if (!text) return "";
+  const startMatch = text.match(/\/start(?:@\w+)?\s+verify_([A-Za-z0-9_-]+)/i);
+  if (startMatch?.[1]) return startMatch[1];
+  const verifyMatch = text.match(/\/verify(?:@\w+)?\s+([A-Za-z0-9_-]+)/i);
+  if (verifyMatch?.[1]) return verifyMatch[1];
+  return text;
 }
 
 async function jsonRequest(path: string, init?: RequestInit) {
@@ -167,6 +186,7 @@ export default function CloudDrive() {
   const [authMode, setAuthMode] = useState<AuthMode>("signin");
   const [view, setView] = useState<MainView>("files");
   const [verifyUsername, setVerifyUsername] = useState("");
+  const [pendingVerification, setPendingVerification] = useState<PendingVerification | null>(null);
   const [shareFile, setShareFile] = useState<StoredFile | null>(null);
   const [sharePassword, setSharePassword] = useState("");
   const [shareUrl, setShareUrl] = useState("");
@@ -209,6 +229,18 @@ export default function CloudDrive() {
 
   useEffect(() => {
     void getCsrfToken();
+    const pending = window.localStorage.getItem("tecloud_pending_verify");
+    if (pending) {
+      try {
+        const parsed = JSON.parse(pending) as PendingVerification;
+        if (parsed.username && parsed.token && parsed.verifyCommand) {
+          setPendingVerification(parsed);
+          setVerifyUsername(parsed.username);
+        }
+      } catch {
+        window.localStorage.removeItem("tecloud_pending_verify");
+      }
+    }
     jsonRequest("/api/auth/me")
       .then((data) => {
         setUser(data.user);
@@ -236,15 +268,29 @@ export default function CloudDrive() {
         const data = await jsonRequest("/api/auth/signin", { method: "POST", body: JSON.stringify({ username: value("username"), password: value("password") }) });
         setUser(data.user);
       } else if (authMode === "signup") {
-        await jsonRequest("/api/auth/signup", {
+        const data = await jsonRequest("/api/auth/signup", {
           method: "POST",
-          body: JSON.stringify({ name: value("name"), username: value("username"), telegramChatId: value("telegramChatId"), password: value("password") }),
+          body: JSON.stringify({ username: value("username"), password: value("password") }),
         });
-        setVerifyUsername(value("username"));
+        const pending = {
+          username: data.username,
+          token: data.token,
+          verifyCommand: data.verifyCommand,
+          botUrl: data.botUrl,
+        } satisfies PendingVerification;
+        setPendingVerification(pending);
+        window.localStorage.setItem("tecloud_pending_verify", JSON.stringify(pending));
+        setVerifyUsername(data.username);
         setAuthMode("verify");
-        setNotice({ tone: "good", text: "Kode verifikasi dikirim lewat bot Telegram." });
+        setNotice({ tone: "good", text: "Akun dibuat. Lanjutkan verifikasi lewat bot Telegram." });
       } else if (authMode === "verify") {
-        const data = await jsonRequest("/api/auth/verify", { method: "POST", body: JSON.stringify({ username: value("username") || verifyUsername, code: value("code") }) });
+        const token = pendingVerification?.token || extractVerifyToken(value("verifyCommand"));
+        const data = await jsonRequest("/api/auth/verify", {
+          method: "POST",
+          body: JSON.stringify({ username: value("username") || verifyUsername || pendingVerification?.username, token }),
+        });
+        window.localStorage.removeItem("tecloud_pending_verify");
+        setPendingVerification(null);
         setUser(data.user);
       } else if (authMode === "forgot") {
         await jsonRequest("/api/auth/forgot", { method: "POST", body: JSON.stringify({ username: value("username") }) });
@@ -268,6 +314,17 @@ export default function CloudDrive() {
     setUser(null);
     setFiles([]);
     setView("files");
+  }
+
+  async function copyVerifyCommand() {
+    const command = pendingVerification?.verifyCommand;
+    if (!command) return;
+    try {
+      await navigator.clipboard.writeText(command);
+      setNotice({ tone: "good", text: "Command verifikasi disalin." });
+    } catch {
+      setNotice({ tone: "warn", text: "Salin command secara manual dari kotak verifikasi." });
+    }
   }
 
   async function uploadFiles(selectedFiles: FileList | File[]) {
@@ -416,36 +473,71 @@ export default function CloudDrive() {
   if (!user) {
     return (
       <main className="app-shell auth-shell">
-        <section className="auth-panel">
-          <div className="brand">
-            <span className="brand-mark">T</span>
-            <div>
-              <p className="eyebrow">Telegram Cloud Drive</p>
-              <h1>TeCloud</h1>
+        <section className="auth-layout">
+          <div className="auth-hero">
+            <div className="brand">
+              <span className="brand-mark">T</span>
+              <div>
+                <p className="eyebrow">Telegram Cloud Drive</p>
+                <h1>TeCloud</h1>
+              </div>
+            </div>
+            <div className="auth-points">
+              <span>File terenkripsi akses akun</span>
+              <span>Share public, password, atau privat</span>
+              <span>Verifikasi langsung lewat bot</span>
             </div>
           </div>
-          {notice && <div className={`notice ${notice.tone}`}>{notice.text}</div>}
-          <div className="auth-tabs">
-            {(["signin", "signup", "verify", "forgot", "reset"] as AuthMode[]).map((mode) => (
-              <button className={authMode === mode ? "active" : ""} key={mode} onClick={() => setAuthMode(mode)} type="button">
-                {mode === "signin" ? "Masuk" : mode === "signup" ? "Daftar" : mode === "verify" ? "Verifikasi" : mode === "forgot" ? "Lupa" : "Reset"}
-              </button>
-            ))}
-          </div>
-          <form className="auth-form" onSubmit={submitAuth}>
-            {authMode === "signup" && <label className="auth-field">Nama<input name="name" placeholder="Nama lengkap" /></label>}
-            {(authMode === "signin" || authMode === "signup" || authMode === "verify" || authMode === "forgot" || authMode === "reset") && (
-              <label className="auth-field">Username<input defaultValue={verifyUsername} name="username" placeholder="username" /></label>
+
+          <section className="auth-panel">
+            <div className="auth-tabs compact">
+              {(["signin", "signup", "verify", "forgot", "reset"] as AuthMode[]).map((mode) => (
+                <button className={authMode === mode ? "active" : ""} key={mode} onClick={() => setAuthMode(mode)} type="button">
+                  {mode === "signin" ? "Masuk" : mode === "signup" ? "Daftar" : mode === "verify" ? "Verifikasi" : mode === "forgot" ? "Lupa" : "Reset"}
+                </button>
+              ))}
+            </div>
+            {notice && <AlertNotice notice={notice} />}
+
+            {authMode === "verify" ? (
+              <form className="auth-form verify-card" onSubmit={submitAuth}>
+                <div>
+                  <h2>Verifikasi Telegram</h2>
+                  <p>Kirim command ini ke bot TeCloud, lalu kembali ke halaman ini untuk mengecek statusnya.</p>
+                </div>
+                <label className="auth-field">Username<input defaultValue={pendingVerification?.username || verifyUsername} name="username" placeholder="username" /></label>
+                {pendingVerification ? (
+                  <div className="command-box">
+                    <code>{pendingVerification.verifyCommand}</code>
+                    <button className="icon-button" onClick={copyVerifyCommand} title="Salin command" type="button"><Icon name="copy" /></button>
+                  </div>
+                ) : (
+                  <label className="auth-field">Command verifikasi<input name="verifyCommand" placeholder="/verify xxxxxxxxx" /></label>
+                )}
+                <div className="verify-actions">
+                  {pendingVerification?.botUrl && (
+                    <a className="telegram-button" href={pendingVerification.botUrl} rel="noreferrer" target="_blank">
+                      <Icon name="telegram" /> Buka bot Telegram
+                    </a>
+                  )}
+                  <button className="primary-button" disabled={busy} type="submit">Saya sudah kirim command</button>
+                </div>
+              </form>
+            ) : (
+              <form className="auth-form" onSubmit={submitAuth}>
+                {(authMode === "signin" || authMode === "signup" || authMode === "forgot" || authMode === "reset") && (
+                  <label className="auth-field">Username<input defaultValue={verifyUsername} name="username" placeholder="username" /></label>
+                )}
+                {(authMode === "signin" || authMode === "signup" || authMode === "reset") && (
+                  <label className="auth-field">Password<input name="password" placeholder="Minimal 8 karakter" type="password" /></label>
+                )}
+                {authMode === "reset" && <label className="auth-field">Kode Telegram<input name="code" placeholder="6 digit" /></label>}
+                <button className="primary-button" disabled={busy} type="submit">
+                  {authMode === "signin" ? "Masuk" : authMode === "signup" ? "Buat akun" : authMode === "forgot" ? "Kirim kode reset" : "Reset password"}
+                </button>
+              </form>
             )}
-            {authMode === "signup" && <label className="auth-field">Telegram chat id<input name="telegramChatId" placeholder="Contoh: 123456789" /></label>}
-            {(authMode === "signin" || authMode === "signup" || authMode === "reset") && (
-              <label className="auth-field">Password<input name="password" placeholder="Minimal 8 karakter" type="password" /></label>
-            )}
-            {(authMode === "verify" || authMode === "reset") && <label className="auth-field">Kode Telegram<input name="code" placeholder="6 digit" /></label>}
-            <button className="primary-button" disabled={busy} type="submit">
-              {authMode === "signin" ? "Masuk" : authMode === "signup" ? "Daftar" : authMode === "verify" ? "Verifikasi" : authMode === "forgot" ? "Kirim kode" : "Reset password"}
-            </button>
-          </form>
+          </section>
         </section>
       </main>
     );
@@ -470,7 +562,7 @@ export default function CloudDrive() {
           </div>
         </header>
 
-        {notice && <div className={`notice ${notice.tone}`}>{notice.text}</div>}
+        {notice && <AlertNotice notice={notice} />}
         {uploadProgress !== null && (
           <div className="upload-progress" aria-label="Progress upload">
             <span style={{ width: `${uploadProgress}%` }} />
@@ -559,6 +651,15 @@ export default function CloudDrive() {
         </div>
       )}
     </main>
+  );
+}
+
+function AlertNotice({ notice }: { notice: Notice }) {
+  return (
+    <div className={`notice ${notice.tone}`} role="alert">
+      <Icon name={notice.tone === "good" ? "check" : "alert"} />
+      <span>{notice.text}</span>
+    </div>
   );
 }
 
