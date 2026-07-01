@@ -14,6 +14,14 @@ export type StoredFile = {
   shareMode: ShareMode;
   shareToken?: string;
   downloadCount: number;
+  folderPath: string;
+  isFavorite: boolean;
+  tags: string[];
+  deletedAt?: string;
+  deleteExpiresAt?: string;
+  shareExpiresAt?: string;
+  shareDownloadLimit?: number;
+  shareDownloadCount: number;
 };
 
 export type ShareMode = "private" | "public" | "password";

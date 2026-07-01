@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getTelegramConfig } from "../../../../../lib/config";
-import { findSharedFile, getShareSecret, incrementDownloadCount, logActivity } from "../../../../../lib/file-store";
+import { findSharedFile, getShareSecret, incrementDownloadCount, isShareDownloadLimitReached, isShareExpired, logActivity } from "../../../../../lib/file-store";
 import { requireRateLimit } from "../../../../../lib/request-guards";
 import { verifyPassword } from "../../../../../lib/security";
 import { getTelegramFileUrl } from "../../../../../lib/telegram";
@@ -31,6 +31,14 @@ export async function GET(request: Request, context: RouteContext) {
   const file = await findSharedFile(params.token);
   if (!file) {
     return NextResponse.json({ error: "Link tidak ditemukan." }, { status: 404 });
+  }
+
+  if (isShareExpired(file)) {
+    return NextResponse.json({ error: "Link share sudah kedaluwarsa." }, { status: 410 });
+  }
+
+  if (isShareDownloadLimitReached(file)) {
+    return NextResponse.json({ error: "Batas download link share sudah tercapai." }, { status: 410 });
   }
 
   if (file.shareMode === "password") {

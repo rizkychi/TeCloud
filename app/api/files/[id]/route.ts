@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getTelegramConfig } from "../../../../lib/config";
-import { findFile, logActivity, removeFile, updateFile } from "../../../../lib/file-store";
+import { findFile, logActivity, normalizeFolderPath, softDeleteFile, updateFile, updateFileExtendedMetadata } from "../../../../lib/file-store";
 import { guardMutation } from "../../../../lib/request-guards";
 import { requireUser } from "../../../../lib/security";
 import {
@@ -64,11 +64,13 @@ export async function PATCH(request: Request, context: RouteContext) {
     const formData = await request.formData();
     const replacement = formData.get("file");
     const name = sanitizeFilename(String(formData.get("name") || current.name));
+    const folderPath = normalizeFolderPath(String(formData.get("folderPath") || current.folderPath));
 
     if (!(replacement instanceof File) || replacement.size === 0) {
       const renamed = await updateFile(id, (file) => ({
         ...file,
         name,
+        folderPath,
         updatedAt: new Date().toISOString(),
       }));
       await logActivity({ userId: user.id, fileId: id, type: "rename" });
@@ -103,6 +105,7 @@ export async function PATCH(request: Request, context: RouteContext) {
       telegramFileId: uploaded.fileId,
       telegramUniqueId: uploaded.uniqueId,
       messageId: uploaded.messageId,
+      folderPath,
       updatedAt: new Date().toISOString(),
       version: file.version + 1,
     }));
@@ -113,14 +116,36 @@ export async function PATCH(request: Request, context: RouteContext) {
 
   const payload = (await request.json().catch(() => ({}))) as {
     name?: string;
+    folderPath?: string;
+    isFavorite?: boolean;
+    tags?: string[];
   };
-  const name = sanitizeFilename(payload.name || current.name);
-  const updated = await updateFile(id, (file) => ({
-    ...file,
-    name,
-    updatedAt: new Date().toISOString(),
-  }));
-  await logActivity({ userId: user.id, fileId: id, type: "rename" });
+  const hasMetadataPatch = payload.folderPath !== undefined || payload.isFavorite !== undefined || payload.tags !== undefined;
+  const name = payload.name === undefined ? current.name : sanitizeFilename(payload.name || current.name);
+  const updated = hasMetadataPatch && payload.name === undefined
+    ? await updateFileExtendedMetadata(id, {
+        folderPath: payload.folderPath,
+        isFavorite: payload.isFavorite,
+        tags: payload.tags,
+      })
+    : await updateFile(id, (file) => ({
+        ...file,
+        name,
+        folderPath: payload.folderPath === undefined ? file.folderPath : normalizeFolderPath(payload.folderPath),
+        isFavorite: payload.isFavorite === undefined ? file.isFavorite : Boolean(payload.isFavorite),
+        tags: payload.tags === undefined ? file.tags : payload.tags,
+        updatedAt: new Date().toISOString(),
+      }));
+  await logActivity({
+    userId: user.id,
+    fileId: id,
+    type: hasMetadataPatch ? "metadata_updated" : "rename",
+    metadata: {
+      folderPath: updated?.folderPath,
+      isFavorite: updated?.isFavorite,
+      tags: updated?.tags,
+    },
+  });
 
   return NextResponse.json({ file: updated });
 }
@@ -161,9 +186,8 @@ export async function DELETE(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Tidak punya akses ke file ini." }, { status: 403 });
   }
 
-  await deleteTelegramMessage(config, current.messageId);
-  await removeFile(id);
-  await logActivity({ userId: user.id, fileId: id, type: "delete", bytes: current.size });
+  const deleted = await softDeleteFile(id);
+  await logActivity({ userId: user.id, fileId: id, type: "trash", bytes: current.size });
 
-  return NextResponse.json({ deleted: true });
+  return NextResponse.json({ deleted: true, file: deleted });
 }

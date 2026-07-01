@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { findSharedFile } from "../../../../lib/file-store";
+import { findSharedFile, isShareDownloadLimitReached, isShareExpired } from "../../../../lib/file-store";
 import { requireRateLimit } from "../../../../lib/request-guards";
 
 type RouteContext = {
@@ -21,6 +21,14 @@ export async function GET(_request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Link tidak ditemukan." }, { status: 404 });
   }
 
+  if (isShareExpired(file)) {
+    return NextResponse.json({ error: "Link share sudah kedaluwarsa." }, { status: 410 });
+  }
+
+  if (isShareDownloadLimitReached(file)) {
+    return NextResponse.json({ error: "Batas download link share sudah tercapai." }, { status: 410 });
+  }
+
   return NextResponse.json({
     file: {
       name: file.name,
@@ -28,6 +36,9 @@ export async function GET(_request: Request, context: RouteContext) {
       mimeType: file.mimeType,
       shareMode: file.shareMode,
       downloadCount: file.downloadCount,
+      shareExpiresAt: file.shareExpiresAt,
+      shareDownloadLimit: file.shareDownloadLimit,
+      shareDownloadCount: file.shareDownloadCount,
       updatedAt: file.updatedAt,
     },
   });

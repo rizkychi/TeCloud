@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getTelegramConfig } from "../../../lib/config";
-import { addFile, listFiles, logActivity } from "../../../lib/file-store";
+import { addFile, listFiles, listSharedFiles, listTrashFiles, logActivity, normalizeFolderPath } from "../../../lib/file-store";
 import { guardMutation } from "../../../lib/request-guards";
 import { requireUser } from "../../../lib/security";
 import { sanitizeFilename, sendDocument } from "../../../lib/telegram";
@@ -17,6 +17,8 @@ export async function GET(request: Request) {
   }
 
   const files = await listFiles(user.id);
+  const trash = await listTrashFiles(user.id);
+  const shared = await listSharedFiles(user.id);
   const totalSize = files.reduce(
     (sum: number, file: StoredFile) => sum + file.size,
     0,
@@ -26,6 +28,8 @@ export async function GET(request: Request) {
     configured: Boolean(getTelegramConfig()),
     user,
     files,
+    trash,
+    shared,
     totalSize,
   });
 }
@@ -82,6 +86,7 @@ export async function POST(request: Request) {
   const uploaded = await sendDocument(config, file);
   const now = new Date().toISOString();
   const name = sanitizeFilename(String(formData.get("name") || file.name));
+  const folderPath = normalizeFolderPath(String(formData.get("folderPath") || "/"));
 
   const record: StoredFile = {
     id: crypto.randomUUID(),
@@ -98,6 +103,10 @@ export async function POST(request: Request) {
     version: 1,
     shareMode: "private",
     downloadCount: 0,
+    folderPath,
+    isFavorite: false,
+    tags: [],
+    shareDownloadCount: 0,
   };
 
   await addFile(record);

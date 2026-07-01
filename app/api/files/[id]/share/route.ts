@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getAppBaseUrl } from "../../../../../lib/config";
 import { findFile, getShareSecret, logActivity, updateShareSettings } from "../../../../../lib/file-store";
 import { guardMutation } from "../../../../../lib/request-guards";
-import { hashPassword, randomToken, requireUser, verifyPassword } from "../../../../../lib/security";
+import { hashPassword, randomToken, requireUser } from "../../../../../lib/security";
 import type { ShareMode } from "../../../../../lib/types";
 
 type RouteContext = {
@@ -36,6 +36,8 @@ export async function PATCH(request: Request, context: RouteContext) {
   const payload = (await request.json().catch(() => ({}))) as {
     mode?: ShareMode;
     password?: string;
+    expiresAt?: string | null;
+    downloadLimit?: number | null;
   };
   const mode = payload.mode || "private";
 
@@ -46,6 +48,14 @@ export async function PATCH(request: Request, context: RouteContext) {
   let passwordHash: string | null = null;
   let passwordSalt: string | null = null;
   let shareToken = file.shareToken || randomToken(18);
+  const expiresAt = payload.expiresAt ? new Date(payload.expiresAt).toISOString() : null;
+  const downloadLimit = payload.downloadLimit && payload.downloadLimit > 0
+    ? Math.floor(payload.downloadLimit)
+    : null;
+
+  if (expiresAt && new Date(expiresAt).getTime() <= Date.now()) {
+    return NextResponse.json({ error: "Tanggal expired harus di masa depan." }, { status: 400 });
+  }
 
   if (mode === "private") {
     shareToken = "";
@@ -75,8 +85,10 @@ export async function PATCH(request: Request, context: RouteContext) {
     mode === "private" ? null : shareToken,
     passwordHash,
     passwordSalt,
+    mode === "private" ? null : expiresAt,
+    mode === "private" ? null : downloadLimit,
   );
-  await logActivity({ userId: user.id, fileId: file.id, type: "share_updated", metadata: { mode } });
+  await logActivity({ userId: user.id, fileId: file.id, type: "share_updated", metadata: { mode, expiresAt, downloadLimit } });
 
   return NextResponse.json({
     file: updated,
