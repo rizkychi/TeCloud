@@ -191,16 +191,6 @@ export async function ensureSchema() {
       count INTEGER NOT NULL,
       reset_at INTEGER NOT NULL
     );
-
-    CREATE INDEX IF NOT EXISTS users_role_idx ON users (role);
-    CREATE INDEX IF NOT EXISTS files_owner_idx ON files (owner_id);
-    CREATE INDEX IF NOT EXISTS files_folder_idx ON files (owner_id, folder_path);
-    CREATE INDEX IF NOT EXISTS files_favorite_idx ON files (owner_id, is_favorite);
-    CREATE INDEX IF NOT EXISTS files_deleted_idx ON files (owner_id, deleted_at);
-    CREATE INDEX IF NOT EXISTS files_share_token_idx ON files (share_token);
-    CREATE INDEX IF NOT EXISTS sessions_token_idx ON sessions (token_hash);
-    CREATE INDEX IF NOT EXISTS activity_created_idx ON activity_events (created_at);
-    CREATE INDEX IF NOT EXISTS rate_limits_reset_idx ON rate_limits (reset_at);
   `);
 
   await addColumnIfMissing("files", "owner_id TEXT");
@@ -217,6 +207,18 @@ export async function ensureSchema() {
   await addColumnIfMissing("files", "share_expires_at TEXT");
   await addColumnIfMissing("files", "share_download_limit INTEGER");
   await addColumnIfMissing("files", "share_download_count INTEGER NOT NULL DEFAULT 0");
+
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS users_role_idx ON users (role);
+    CREATE INDEX IF NOT EXISTS files_owner_idx ON files (owner_id);
+    CREATE INDEX IF NOT EXISTS files_folder_idx ON files (owner_id, folder_path);
+    CREATE INDEX IF NOT EXISTS files_favorite_idx ON files (owner_id, is_favorite);
+    CREATE INDEX IF NOT EXISTS files_deleted_idx ON files (owner_id, deleted_at);
+    CREATE INDEX IF NOT EXISTS files_share_token_idx ON files (share_token);
+    CREATE INDEX IF NOT EXISTS sessions_token_idx ON sessions (token_hash);
+    CREATE INDEX IF NOT EXISTS activity_created_idx ON activity_events (created_at);
+    CREATE INDEX IF NOT EXISTS rate_limits_reset_idx ON rate_limits (reset_at);
+  `);
   schemaReady = true;
 }
 
