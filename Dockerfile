@@ -6,6 +6,7 @@ RUN npm ci --include=dev
 FROM node:22-bookworm-slim AS builder
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV NODE_OPTIONS=--disable-warning=ExperimentalWarning
 ENV DATA_DIR=/tmp/tecloud-build-data
 ENV DATABASE_PATH=/tmp/tecloud-build-data/tecloud-build.sqlite
 ENV APP_BASE_URL=http://localhost:3000
@@ -18,6 +19,7 @@ FROM node:22-bookworm-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV NODE_OPTIONS=--disable-warning=ExperimentalWarning
 ENV DATA_DIR=/app/data
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
