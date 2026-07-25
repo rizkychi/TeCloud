@@ -1,73 +1,66 @@
--- Email auth → username + Telegram verify/reset
--- (originally a no-op placeholder; real SQL lives here for clean installs)
+-- Idempotent apply for environments that already marked
+-- 20260724150000_username_telegram_auth as applied while it was a no-op comment.
+-- Safe to run on DBs that already have username columns.
 
--- Auth token enum (new name)
 DO $$ BEGIN
   CREATE TYPE "AuthTokenType" AS ENUM ('verify_account', 'reset_password');
 EXCEPTION
   WHEN duplicate_object THEN null;
 END $$;
 
--- User: username, telegram, verifiedAt
 ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "username" TEXT;
 ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "telegramId" TEXT;
 ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "verifiedAt" TIMESTAMP(3);
 
--- Backfill username from email local-part when migrating old rows
-UPDATE "User"
-SET "username" = lower(regexp_replace(split_part("email", '@', 1), '[^a-z0-9_]', '_', 'g'))
-WHERE "username" IS NULL AND EXISTS (
-  SELECT 1 FROM information_schema.columns
-  WHERE table_name = 'User' AND column_name = 'email'
-);
+-- Backfill from email when column still exists
+DO $$ BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'User' AND column_name = 'email'
+  ) THEN
+    UPDATE "User"
+    SET "username" = lower(regexp_replace(split_part("email", '@', 1), '[^a-z0-9_]', '_', 'g'))
+    WHERE "username" IS NULL;
+  END IF;
+END $$;
 
--- Ensure every user has a username
 UPDATE "User"
 SET "username" = 'user_' || substr(md5(random()::text || id), 1, 12)
-WHERE "username" IS NULL OR "username" = '';
+WHERE "username" IS NULL OR btrim("username") = '';
 
--- Deduplicate usernames if needed
 WITH d AS (
   SELECT id, "username",
     ROW_NUMBER() OVER (PARTITION BY "username" ORDER BY "createdAt") AS rn
   FROM "User"
 )
 UPDATE "User" u
-SET "username" = u."username" || '_' || substr(u.id, length(u.id) - 5)
+SET "username" = left(u."username", 24) || '_' || substr(u.id, greatest(1, length(u.id) - 5))
 FROM d
 WHERE u.id = d.id AND d.rn > 1;
 
-ALTER TABLE "User" ALTER COLUMN "username" SET NOT NULL;
-
 DO $$ BEGIN
-  ALTER TABLE "User" ADD CONSTRAINT "User_username_key" UNIQUE ("username");
+  ALTER TABLE "User" ALTER COLUMN "username" SET NOT NULL;
 EXCEPTION
-  WHEN duplicate_object THEN null;
-  WHEN unique_violation THEN null;
+  WHEN others THEN null;
 END $$;
 
-DO $$ BEGIN
-  ALTER TABLE "User" ADD CONSTRAINT "User_telegramId_key" UNIQUE ("telegramId");
-EXCEPTION
-  WHEN duplicate_object THEN null;
-END $$;
+CREATE UNIQUE INDEX IF NOT EXISTS "User_username_key" ON "User"("username");
+CREATE UNIQUE INDEX IF NOT EXISTS "User_telegramId_key" ON "User"("telegramId");
 
--- Copy emailVerifiedAt → verifiedAt if present
 DO $$ BEGIN
   IF EXISTS (
     SELECT 1 FROM information_schema.columns
     WHERE table_schema = 'public' AND table_name = 'User' AND column_name = 'emailVerifiedAt'
   ) THEN
-    UPDATE "User" SET "verifiedAt" = "emailVerifiedAt" WHERE "verifiedAt" IS NULL AND "emailVerifiedAt" IS NOT NULL;
+    UPDATE "User" SET "verifiedAt" = "emailVerifiedAt"
+    WHERE "verifiedAt" IS NULL AND "emailVerifiedAt" IS NOT NULL;
   END IF;
 END $$;
 
--- Drop old email unique + column if present
 DROP INDEX IF EXISTS "User_email_key";
 ALTER TABLE "User" DROP COLUMN IF EXISTS "email";
 ALTER TABLE "User" DROP COLUMN IF EXISTS "emailVerifiedAt";
 
--- AuthToken table (replace EmailToken)
 CREATE TABLE IF NOT EXISTS "AuthToken" (
     "id" TEXT NOT NULL,
     "userId" TEXT NOT NULL,
@@ -90,6 +83,5 @@ EXCEPTION
   WHEN duplicate_object THEN null;
 END $$;
 
--- Drop legacy EmailToken if present
 DROP TABLE IF EXISTS "EmailToken";
 DROP TYPE IF EXISTS "EmailTokenType";
