@@ -1,0 +1,780 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import {
+  ArrowLeft,
+  Cloud,
+  HardDrive,
+  LogOut,
+  Shield,
+  Users,
+  Files,
+  Folder,
+  Star,
+  Share2,
+  UserCheck,
+  UserX,
+  Trash2,
+  KeyRound,
+  Palette,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { NumberInput } from "@/components/ui/number-input";
+import { Select } from "@/components/ui/select";
+import { LoadingOverlay, Spinner } from "@/components/ui/loading";
+import { ToastHost, pushToast } from "@/components/ui/toast";
+import { ConfirmModal } from "@/components/ui/confirm-modal";
+import { ThemeProvider } from "@/components/theme-provider";
+import type { Dictionary } from "@/lib/i18n/dictionaries";
+import type { SessionUser } from "@/lib/auth";
+import { formatBytes } from "@/lib/format";
+import { THEME_PRESETS, bytesToGb } from "@/lib/units";
+
+type Stats = {
+  totals: {
+    users: number;
+    activeUsers: number;
+    disabledUsers: number;
+    admins: number;
+    files: number;
+    folders: number;
+    starredFiles: number;
+    starredFolders: number;
+    sharedFiles: number;
+    storageBytes: number;
+    storageGb: number;
+    avgFileBytes: number;
+    defaultQuotaBytes: number;
+    defaultQuotaGb: number;
+  };
+  recentUsers: Array<{
+    id: string;
+    username: string;
+    name: string;
+    createdAt: string;
+    role: string;
+    disabled: boolean;
+  }>;
+  topUsers: Array<{
+    userId: string;
+    username: string;
+    name: string;
+    files: number;
+    bytes: number;
+    gb: number;
+  }>;
+  uploadsByDay: Array<{ date: string; count: number; bytes: number; gb: number }>;
+  signupsByDay: Array<{ date: string; count: number }>;
+  mimeBreakdown: Array<{ mimeType: string; count: number; bytes: number }>;
+};
+
+type AdminUser = {
+  id: string;
+  username: string;
+  name: string;
+  role: "user" | "admin";
+  locale: string;
+  disabled: boolean;
+  verified: boolean;
+  telegramId: string | null;
+  theme: string;
+  quotaBytes: number | null;
+  quotaGb: number | null;
+  effectiveQuotaBytes: number;
+  effectiveQuotaGb: number;
+  usedBytes: number;
+  usedGb: number;
+  fileCount: number;
+  folderCount: number;
+  sessionCount: number;
+  createdAt: string;
+};
+
+export function AdminApp({
+  dict,
+  locale,
+  user,
+}: {
+  dict: Dictionary;
+  locale: string;
+  user: SessionUser;
+}) {
+  const router = useRouter();
+  const [tab, setTab] = useState<"dashboard" | "users" | "settings">("dashboard");
+  const [stats, setStats] = useState<Stats | null>(null);
+  const [users, setUsers] = useState<AdminUser[]>([]);
+  const [defaultQuotaGb, setDefaultQuotaGb] = useState(5);
+  const [defaultQuotaInput, setDefaultQuotaInput] = useState("5");
+  const [defaultTheme, setDefaultTheme] = useState("dark");
+  const [allowedThemes, setAllowedThemes] = useState<string[]>(THEME_PRESETS.map((t) => t.id));
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [quotaDrafts, setQuotaDrafts] = useState<Record<string, string>>({});
+  const [passwordDrafts, setPasswordDrafts] = useState<Record<string, string>>({});
+  const [theme, setTheme] = useState(user.theme || "dark");
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [quotaPopup, setQuotaPopup] = useState<{ id: string; name: string; quotaGb: number | null } | null>(null);
+  const [quotaPopupValue, setQuotaPopupValue] = useState("");
+  const [passwordPopup, setPasswordPopup] = useState<{ id: string; name: string } | null>(null);
+  const [passwordPopupValue, setPasswordPopupValue] = useState("");
+  const [userFilter, setUserFilter] = useState<"all" | "active" | "disabled" | "verified" | "unverified">("all");
+
+  async function loadAll() {
+    setLoading(true);
+    setError(null);
+    try {
+      const [s, u, st] = await Promise.all([
+        fetch("/api/admin/stats"),
+        fetch("/api/admin/users"),
+        fetch("/api/admin/settings"),
+      ]);
+      if (s.status === 401 || u.status === 401) {
+        router.push("/login");
+        return;
+      }
+      if (s.status === 403 || u.status === 403) {
+        router.push("/app");
+        return;
+      }
+      const sj = await s.json();
+      const uj = await u.json();
+      const stj = await st.json();
+      if (!s.ok) throw new Error(sj?.error?.message || dict.errorGeneric);
+      if (!u.ok) throw new Error(uj?.error?.message || dict.errorGeneric);
+      setStats(sj);
+      setUsers(uj.users || []);
+      const drafts: Record<string, string> = {};
+      for (const row of uj.users || []) {
+        drafts[row.id] = row.quotaGb != null ? String(row.quotaGb) : "";
+      }
+      setQuotaDrafts(drafts);
+      const dq = stj.defaultQuotaGb ?? sj.totals?.defaultQuotaGb ?? 5;
+      setDefaultQuotaGb(dq);
+      setDefaultQuotaInput(String(dq));
+      setDefaultTheme(stj.defaultTheme || "dark");
+      setAllowedThemes(stj.allowedThemes || THEME_PRESETS.map((t) => t.id));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : dict.errorGeneric);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadAll();
+  }, []);
+
+  const filteredUsers = useMemo(() => {
+    return users.filter((u) => {
+      if (userFilter === "active") return !u.disabled;
+      if (userFilter === "disabled") return u.disabled;
+      if (userFilter === "verified") return u.verified;
+      if (userFilter === "unverified") return !u.verified;
+      return true;
+    });
+  }, [users, userFilter]);
+
+  async function updateUser(id: string, patch: Record<string, unknown>, label?: string) {
+    setBusy(label || dict.saving);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/users/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      const j = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(j?.error?.message || dict.errorGeneric);
+      await loadAll();
+      pushToast("success", dict.toastSaved);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : dict.errorGeneric;
+      setError(msg);
+      pushToast("error", msg);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function deleteUser(id: string) {
+    setBusy(dict.processing);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/users/${id}`, { method: "DELETE" });
+      const j = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(j?.error?.message || dict.errorGeneric);
+      await loadAll();
+      pushToast("success", dict.saved);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : dict.errorGeneric;
+      setError(msg);
+      pushToast("error", msg);
+    } finally {
+      setBusy(null);
+      setConfirmDeleteId(null);
+    }
+  }
+
+  async function saveSettings() {
+    const n = Number(String(defaultQuotaInput).replace(",", "."));
+    if (!Number.isFinite(n) || n <= 0) {
+      setError(dict.errorGeneric);
+      pushToast("error", dict.errorGeneric);
+      return;
+    }
+    setBusy(dict.saving);
+    setError(null);
+    try {
+      const res = await fetch("/api/admin/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          defaultQuotaGb: n,
+          defaultTheme,
+          allowedThemes,
+        }),
+      });
+      const j = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(j?.error?.message || dict.errorGeneric);
+      setDefaultQuotaGb(j.defaultQuotaGb);
+      setDefaultTheme(j.defaultTheme);
+      setAllowedThemes(j.allowedThemes || []);
+      await loadAll();
+      pushToast("success", dict.toastSaved);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : dict.errorGeneric;
+      setError(msg);
+      pushToast("error", msg);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const maxUploadBar = useMemo(
+    () => Math.max(1, ...(stats?.uploadsByDay.map((d) => d.count) || [1])),
+    [stats],
+  );
+  const maxSignupBar = useMemo(
+    () => Math.max(1, ...(stats?.signupsByDay.map((d) => d.count) || [1])),
+    [stats],
+  );
+  const maxMime = useMemo(
+    () => Math.max(1, ...(stats?.mimeBreakdown.map((m) => m.count) || [1])),
+    [stats],
+  );
+
+  const themeLabel = (id: string) => {
+    if (id === "light") return dict.themeLight;
+    if (id === "dark") return dict.themeDark;
+    if (id === "ocean") return dict.themeOcean;
+    if (id === "forest") return dict.themeForest;
+    if (id === "sunset") return dict.themeSunset;
+    if (id === "campus") return dict.themeCampus;
+    return id;
+  };
+
+  return (
+    <ThemeProvider theme={theme}>
+      <LoadingOverlay show={Boolean(busy)} label={busy || dict.loading} />
+      <ToastHost />
+      <div className="flex min-h-screen bg-[var(--bg)] text-[var(--text)]">
+        <aside className="hidden w-64 shrink-0 border-r tc-border bg-[var(--panel)] p-4 md:flex md:flex-col">
+          <div className="mb-8 flex items-center gap-2 px-2">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[color-mix(in_srgb,var(--brand)_20%,transparent)] text-[var(--brand-hover)]">
+              <Shield className="h-4 w-4" />
+            </div>
+            <div>
+              <div className="text-sm font-medium">{dict.admin}</div>
+              <div className="text-[10px] text-[var(--faint)]">{dict.appName}</div>
+            </div>
+          </div>
+          <nav className="space-y-1">
+            {(
+              [
+                ["dashboard", dict.adminDashboard],
+                ["users", dict.adminUsers],
+                ["settings", dict.adminSettings],
+              ] as const
+            ).map(([k, label]) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setTab(k)}
+                className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm ${
+                  tab === k ? "tc-selected" : "text-[var(--muted)] tc-hover"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </nav>
+          <div className="mt-auto space-y-2 border-t tc-border pt-4">
+            <Button variant="ghost" className="w-full" onClick={() => router.push("/app")}>
+              <ArrowLeft className="h-4 w-4" />
+              {dict.backToDrive}
+            </Button>
+            <Button
+              variant="ghost"
+              className="w-full"
+              onClick={async () => {
+                setBusy(dict.processing);
+                await fetch("/api/auth/logout", { method: "POST" });
+                router.push("/login");
+              }}
+            >
+              <LogOut className="h-4 w-4" />
+              {dict.signOut}
+            </Button>
+          </div>
+        </aside>
+
+        <main className="flex min-w-0 flex-1 flex-col">
+          <header className="flex items-center justify-between border-b tc-border bg-[var(--panel)] px-4 py-3">
+            <div className="flex items-center gap-2 text-sm">
+              <Cloud className="h-4 w-4 text-[var(--accent)]" />
+              <span className="font-medium">{dict.admin}</span>
+              <span className="text-[var(--faint)]">· {user.username}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant="subtle" onClick={() => router.push("/app")}>
+                {dict.backToDrive}
+              </Button>
+            </div>
+          </header>
+
+          <div className="flex-1 p-4 md:p-6">
+            {error && (
+              <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
+                {error}
+              </div>
+            )}
+            {loading || !stats ? (
+              <div className="flex items-center gap-2 text-sm text-[var(--muted)]">
+                <Spinner /> {dict.loading}
+              </div>
+            ) : tab === "dashboard" ? (
+              <div className="space-y-6">
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <StatCard icon={<Users className="h-4 w-4" />} label={dict.totalUsers} value={String(stats.totals.users)} sub={`${stats.totals.activeUsers} ${dict.activeUsers}`} />
+                  <StatCard icon={<UserCheck className="h-4 w-4" />} label={dict.activeUsers} value={String(stats.totals.activeUsers)} sub={`${stats.totals.disabledUsers} ${dict.disabledUsers}`} />
+                  <StatCard icon={<Files className="h-4 w-4" />} label={dict.totalFiles} value={String(stats.totals.files)} sub={`${stats.totals.folders} ${dict.totalFolders}`} />
+                  <StatCard icon={<HardDrive className="h-4 w-4" />} label={dict.totalStorage} value={`${stats.totals.storageGb} GB`} sub={formatBytes(stats.totals.storageBytes)} />
+                  <StatCard icon={<Star className="h-4 w-4" />} label={dict.starred} value={String(stats.totals.starredFiles + stats.totals.starredFolders)} sub={`${stats.totals.starredFiles} files`} />
+                  <StatCard icon={<Share2 className="h-4 w-4" />} label={dict.sharedFiles} value={String(stats.totals.sharedFiles)} />
+                  <StatCard icon={<Folder className="h-4 w-4" />} label={dict.avgFileSize} value={formatBytes(stats.totals.avgFileBytes)} />
+                  <StatCard icon={<Shield className="h-4 w-4" />} label={dict.defaultQuota} value={`${stats.totals.defaultQuotaGb} GB`} />
+                </div>
+
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <div className="rounded-2xl border tc-border bg-[var(--panel)] p-4">
+                    <h3 className="mb-4 text-sm font-medium">{dict.uploadsChart}</h3>
+                    <div className="chart-bars">
+                      {stats.uploadsByDay.map((d) => (
+                        <div
+                          key={d.date}
+                          className="bar"
+                          title={`${d.date}: ${d.count} · ${formatBytes(d.bytes)}`}
+                          style={{ height: `${Math.max(6, (d.count / maxUploadBar) * 100)}%` }}
+                        />
+                      ))}
+                    </div>
+                    <div className="mt-2 flex justify-between text-[10px] text-[var(--faint)]">
+                      <span>{stats.uploadsByDay[0]?.date}</span>
+                      <span>{stats.uploadsByDay[stats.uploadsByDay.length - 1]?.date}</span>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border tc-border bg-[var(--panel)] p-4">
+                    <h3 className="mb-4 text-sm font-medium">{dict.signupsChart}</h3>
+                    <div className="chart-bars">
+                      {stats.signupsByDay.map((d) => (
+                        <div
+                          key={d.date}
+                          className="bar"
+                          title={`${d.date}: ${d.count}`}
+                          style={{
+                            height: `${Math.max(6, (d.count / maxSignupBar) * 100)}%`,
+                            background: "linear-gradient(180deg, var(--accent), color-mix(in srgb, var(--accent) 50%, var(--brand)))",
+                          }}
+                        />
+                      ))}
+                    </div>
+                    <div className="mt-2 flex justify-between text-[10px] text-[var(--faint)]">
+                      <span>{stats.signupsByDay[0]?.date}</span>
+                      <span>{stats.signupsByDay[stats.signupsByDay.length - 1]?.date}</span>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border tc-border bg-[var(--panel)] p-4">
+                    <h3 className="mb-4 text-sm font-medium">{dict.topUsers}</h3>
+                    <div className="space-y-2">
+                      {stats.topUsers.length === 0 && (
+                        <p className="text-sm text-[var(--muted)]">{dict.noItems}</p>
+                      )}
+                      {stats.topUsers.map((u) => (
+                        <div key={u.userId} className="flex items-center justify-between rounded-lg border tc-border px-3 py-2 text-sm">
+                          <div className="min-w-0">
+                            <div className="truncate font-medium">{u.name}</div>
+                            <div className="truncate text-xs text-[var(--muted)]">{u.username}</div>
+                          </div>
+                          <div className="text-right text-xs text-[var(--muted)]">
+                            <div>{u.gb} GB</div>
+                            <div>
+                              {u.files} {dict.items}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border tc-border bg-[var(--panel)] p-4">
+                    <h3 className="mb-4 text-sm font-medium">{dict.mimeChart}</h3>
+                    <div className="space-y-3">
+                      {stats.mimeBreakdown.length === 0 && (
+                        <p className="text-sm text-[var(--muted)]">{dict.noItems}</p>
+                      )}
+                      {stats.mimeBreakdown.map((m) => (
+                        <div key={m.mimeType}>
+                          <div className="mb-1 flex justify-between text-xs">
+                            <span className="truncate text-[var(--text-2)]">{m.mimeType}</span>
+                            <span className="text-[var(--muted)]">
+                              {m.count} · {formatBytes(m.bytes)}
+                            </span>
+                          </div>
+                          <div className="quota-bar">
+                            <span style={{ width: `${Math.max(4, (m.count / maxMime) * 100)}%` }} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : tab === "users" ? (
+              <div className="overflow-hidden rounded-2xl border tc-border bg-[var(--panel)]">
+                <div className="flex flex-wrap items-center gap-2 border-b tc-border px-4 py-3">
+                  <div className="w-48">
+                    <Select
+                      value={userFilter}
+                      options={[
+                        { value: "all", label: dict.userFilterAll },
+                        { value: "active", label: dict.userFilterActive },
+                        { value: "disabled", label: dict.userFilterDisabled },
+                        { value: "verified", label: dict.userFilterVerified },
+                        { value: "unverified", label: dict.userFilterUnverified },
+                      ]}
+                      onChange={(v) => setUserFilter(v as typeof userFilter)}
+                    />
+                  </div>
+                  <span className="text-xs text-[var(--muted)]">
+                    {filteredUsers.length} / {users.length}
+                  </span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[920px] text-left text-sm">
+                    <thead className="border-b tc-border text-xs text-[var(--muted)]">
+                      <tr>
+                        <th className="px-4 py-3">{dict.name}</th>
+                        <th className="px-4 py-3">{dict.role}</th>
+                        <th className="px-4 py-3">{dict.status}</th>
+                        <th className="px-4 py-3">{dict.quotaGb}</th>
+                        <th className="px-4 py-3">{dict.adminActions}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredUsers.map((u) => (
+                        <tr key={u.id} className="border-b border-[var(--border-subtle)] align-top">
+                          <td className="px-4 py-3">
+                            <div className="font-medium">{u.name}</div>
+                            <div className="text-xs text-[var(--muted)]">@{u.username}</div>
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] ${u.verified ? "bg-emerald-500/15 text-emerald-300" : "bg-amber-500/15 text-amber-200"}`}>
+                                {u.verified ? dict.statusVerified : dict.statusUnverified}
+                              </span>
+                              {u.telegramId && (
+                                <span className="inline-flex rounded-full bg-sky-500/15 px-2 py-0.5 text-[10px] text-sky-200">
+                                  TG {u.telegramId}
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[10px] text-[var(--faint)]">
+                              {u.fileCount} files · {u.usedGb} GB used · {new Date(u.createdAt).toLocaleString(locale)}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 w-36">
+                            <Select
+                              value={u.role}
+                              options={[
+                                { value: "user", label: "user" },
+                                { value: "admin", label: "admin" },
+                              ]}
+                              onChange={(role) => updateUser(u.id, { role })}
+                            />
+                          </td>
+                          <td className="px-4 py-3">
+                            <span
+                              className={`inline-flex rounded-full px-2 py-0.5 text-[11px] ${
+                                u.disabled
+                                  ? "bg-red-500/15 text-red-300"
+                                  : "bg-emerald-500/15 text-emerald-300"
+                              }`}
+                            >
+                              {u.disabled ? dict.userDisabled : dict.userActive}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 w-48">
+                            <div className="mb-1 text-xs text-[var(--muted)]">
+                              {u.usedGb} / {u.effectiveQuotaGb} GB
+                              {u.quotaGb == null ? ` (${dict.useDefaultQuota})` : ""}
+                            </div>
+                            <div className="quota-bar">
+                              <span
+                                style={{
+                                  width: `${Math.min(
+                                    100,
+                                    u.effectiveQuotaBytes
+                                      ? (u.usedBytes / u.effectiveQuotaBytes) * 100
+                                      : 0,
+                                  )}%`,
+                                }}
+                              />
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-1.5">
+                              <Button
+                                size="icon"
+                                variant="subtle"
+                                title={u.disabled ? dict.enableUser : dict.disableUser}
+                                onClick={() =>
+                                  updateUser(
+                                    u.id,
+                                    { disabled: !u.disabled },
+                                    u.disabled ? dict.enableUser : dict.disableUser,
+                                  )
+                                }
+                              >
+                                {u.disabled ? <UserCheck className="h-4 w-4" /> : <UserX className="h-4 w-4" />}
+                              </Button>
+                              <Button
+                                size="icon"
+                                variant="subtle"
+                                title={dict.setQuotaPopup}
+                                onClick={() => {
+                                  setQuotaPopup({ id: u.id, name: u.name, quotaGb: u.quotaGb });
+                                  setQuotaPopupValue(u.quotaGb != null ? String(u.quotaGb) : "");
+                                }}
+                              >
+                                <HardDrive className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                size="icon"
+                                variant="subtle"
+                                title={dict.resetPasswordPopup}
+                                onClick={() => {
+                                  setPasswordPopup({ id: u.id, name: u.name });
+                                  setPasswordPopupValue("");
+                                }}
+                              >
+                                <KeyRound className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                size="icon"
+                                variant="subtle"
+                                className="text-[var(--danger)]"
+                                title={dict.deleteUser}
+                                onClick={() => setConfirmDeleteId(u.id)}
+                                disabled={u.id === user.id}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : (
+              <div className="max-w-xl space-y-5 rounded-2xl border tc-border bg-[var(--panel)] p-5">
+                <h3 className="text-sm font-medium">{dict.adminSettings}</h3>
+                <div className="space-y-1.5">
+                  <label className="text-xs text-[var(--muted)]">{dict.defaultQuota} (GB)</label>
+                  <NumberInput
+                    step={0.1}
+                    min={0.1}
+                    value={defaultQuotaInput}
+                    onChange={setDefaultQuotaInput}
+                  />
+                  <p className="text-xs text-[var(--faint)]">
+                    Current: {defaultQuotaGb} GB ({formatBytes(Math.round(defaultQuotaGb * 1024 ** 3))})
+                  </p>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs text-[var(--muted)]">{dict.defaultTheme}</label>
+                  <Select
+                    value={defaultTheme}
+                    options={THEME_PRESETS.map((t) => ({ value: t.id, label: themeLabel(t.id) }))}
+                    onChange={setDefaultTheme}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs text-[var(--muted)] flex items-center gap-2">
+                    <Palette className="h-3.5 w-3.5" /> {dict.allowedThemes}
+                  </label>
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    {THEME_PRESETS.map((t) => {
+                      const on = allowedThemes.includes(t.id);
+                      return (
+                        <button
+                          key={t.id}
+                          type="button"
+                          onClick={() => {
+                            setAllowedThemes((prev) => {
+                              if (on) {
+                                const next = prev.filter((x) => x !== t.id);
+                                return next.length ? next : prev;
+                              }
+                              return [...prev, t.id];
+                            });
+                          }}
+                          className={`rounded-xl border px-3 py-2 text-left text-sm ${
+                            on ? "tc-selected border-[var(--brand)]" : "tc-border tc-hover"
+                          }`}
+                        >
+                          {themeLabel(t.id)}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-xs text-[var(--faint)]">
+                    Tema dark/light saat ini disimpan; admin bisa menambah Ocean / Forest / Sunset.
+                  </p>
+                </div>
+                <Button variant="primary" onClick={saveSettings} disabled={Boolean(busy)}>
+                  {busy ? <Spinner className="h-4 w-4" /> : null}
+                  {dict.saveSettings}
+                </Button>
+              </div>
+            )}
+          </div>
+        </main>
+      </div>
+      {quotaPopup && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-md rounded-2xl border tc-border bg-[var(--surface)] p-4 shadow-[var(--shadow)]">
+            <h2 className="mb-1 text-sm font-medium">{dict.setQuotaPopup}</h2>
+            <p className="mb-3 text-xs text-[var(--muted)]">{quotaPopup.name}</p>
+            <label className="mb-1 block text-xs text-[var(--muted)]">{dict.quotaGb}</label>
+            <NumberInput
+              step={0.1}
+              min={0.1}
+              placeholder={String(defaultQuotaGb)}
+              value={quotaPopupValue}
+              onChange={setQuotaPopupValue}
+            />
+            <p className="mt-1 text-[11px] text-[var(--faint)]">{dict.useDefaultQuota}: kosongkan input</p>
+            <div className="mt-4 flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => setQuotaPopup(null)} disabled={!!busy}>{dict.cancel}</Button>
+              <Button
+                variant="primary"
+                disabled={!!busy}
+                onClick={async () => {
+                  const raw = quotaPopupValue.trim();
+                  await updateUser(
+                    quotaPopup.id,
+                    { quotaGb: raw ? Number(raw.replace(",", ".")) : null },
+                    dict.setQuotaPopup,
+                  );
+                  setQuotaPopup(null);
+                }}
+              >
+                {busy ? <Spinner className="h-4 w-4" /> : null}
+                {dict.save}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+      {passwordPopup && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-md rounded-2xl border tc-border bg-[var(--surface)] p-4 shadow-[var(--shadow)]">
+            <h2 className="mb-1 text-sm font-medium">{dict.resetPasswordPopup}</h2>
+            <p className="mb-3 text-xs text-[var(--muted)]">{passwordPopup.name}</p>
+            <label className="mb-1 block text-xs text-[var(--muted)]">{dict.newPassword}</label>
+            <Input
+              type="password"
+              value={passwordPopupValue}
+              onChange={(e) => setPasswordPopupValue(e.target.value)}
+              placeholder={dict.newPassword}
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => setPasswordPopup(null)} disabled={!!busy}>{dict.cancel}</Button>
+              <Button
+                variant="primary"
+                disabled={!!busy}
+                onClick={async () => {
+                  const pw = passwordPopupValue.trim();
+                  if (pw.length < 8) {
+                    setError(dict.errorGeneric);
+                    pushToast("error", dict.errorGeneric);
+                    return;
+                  }
+                  await updateUser(passwordPopup.id, { password: pw }, dict.resetPassword);
+                  setPasswordPopup(null);
+                  setPasswordPopupValue("");
+                }}
+              >
+                {busy ? <Spinner className="h-4 w-4" /> : null}
+                {dict.save}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+      {confirmDeleteId && (
+        <ConfirmModal
+          title={dict.deleteUser}
+          message={dict.confirmDeleteUser}
+          confirmLabel={dict.deleteUser}
+          cancelLabel={dict.cancel}
+          danger
+          busy={!!busy}
+          onClose={() => setConfirmDeleteId(null)}
+          onConfirm={async () => {
+            const id = confirmDeleteId;
+            if (id) await deleteUser(id);
+          }}
+        />
+      )}
+    </ThemeProvider>
+  );
+}
+
+function StatCard({
+  icon,
+  label,
+  value,
+  sub,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  sub?: string;
+}) {
+  return (
+    <div className="rounded-2xl border tc-border bg-[var(--panel)] p-4">
+      <div className="mb-3 flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--surface-2)] text-[var(--brand-hover)]">
+        {icon}
+      </div>
+      <div className="text-xs text-[var(--muted)]">{label}</div>
+      <div className="mt-1 text-xl font-medium tracking-tight">{value}</div>
+      {sub ? <div className="mt-1 text-[11px] text-[var(--faint)]">{sub}</div> : null}
+    </div>
+  );
+}

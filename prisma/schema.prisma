@@ -1,0 +1,139 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Visibility {
+  private
+  public
+  password
+}
+
+enum Role {
+  user
+  admin
+}
+
+enum AuthTokenType {
+  verify_account
+  reset_password
+}
+
+model User {
+  id           String    @id @default(cuid())
+  username     String    @unique
+  passwordHash String
+  name         String
+  locale       String    @default("id")
+  role         Role      @default(user)
+  /// null = use system default quota
+  quotaBytes   BigInt?
+  theme        String    @default("dark")
+  viewMode     String    @default("list")
+  disabled     Boolean   @default(false)
+  /// Telegram user id bound after first successful verify/reset via bot
+  telegramId   String?   @unique
+  verifiedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  sessions   Session[]
+  folders    Folder[]
+  files      FileObject[]
+  authTokens AuthToken[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model AuthToken {
+  id        String        @id @default(cuid())
+  userId    String
+  type      AuthTokenType
+  /// raw token is never stored; this is sha256
+  tokenHash String        @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime      @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, type])
+  @@index([expiresAt])
+}
+
+model Folder {
+  id                String     @id @default(cuid())
+  ownerId           String
+  parentId          String?
+  name              String
+  visibility        Visibility @default(private)
+  shareToken        String?    @unique
+  sharePasswordHash String?
+  starred           Boolean    @default(false)
+  lastAccessedAt    DateTime?
+  deletedAt         DateTime?
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  owner    User         @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  parent   Folder?      @relation("FolderTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children Folder[]     @relation("FolderTree")
+  files    FileObject[]
+
+  @@index([ownerId, parentId])
+  @@index([ownerId, deletedAt])
+  @@index([ownerId, starred])
+  @@index([ownerId, lastAccessedAt])
+}
+
+model FileObject {
+  id                String     @id @default(cuid())
+  ownerId           String
+  folderId          String?
+  name              String
+  mimeType          String
+  size              BigInt
+  storageKey        String
+  visibility        Visibility @default(private)
+  shareToken        String?    @unique
+  sharePasswordHash String?
+  starred           Boolean    @default(false)
+  version           Int        @default(1)
+  versionGroupId    String?
+  isLatest          Boolean    @default(true)
+  lastAccessedAt    DateTime?
+  deletedAt         DateTime?
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  owner  User    @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  folder Folder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
+
+  @@index([ownerId, folderId])
+  @@index([ownerId, deletedAt])
+  @@index([ownerId, starred])
+  @@index([ownerId, lastAccessedAt])
+  @@index([versionGroupId])
+  @@index([ownerId, folderId, name, isLatest])
+}
+
+model SystemSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}

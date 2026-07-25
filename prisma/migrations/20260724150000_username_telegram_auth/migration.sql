@@ -1,0 +1,1 @@
+-- Applied manually via transform script (email -> username, EmailToken -> AuthToken)

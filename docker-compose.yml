@@ -1,0 +1,56 @@
+# Local prod-like stack. Coolify: use Dockerfile + managed Postgres (ignore this file)
+# or import compose and override DATABASE_URL / secrets in the UI.
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: tecloud
+      POSTGRES_PASSWORD: tecloud
+      POSTGRES_DB: tecloud
+    ports:
+      - "5433:5432"
+    volumes:
+      - tecloud_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tecloud -d tecloud"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+      # Use https://your.domain in real deploy so session cookies get Secure
+      APP_URL: http://localhost:3000
+      DATABASE_URL: postgresql://tecloud:tecloud@db:5432/tecloud
+      SESSION_SECRET: change-me-to-a-long-random-secret-at-least-32-chars
+      STORAGE_DRIVER: mock
+      STORAGE_PATH: /data/storage
+      MAX_UPLOAD_BYTES: "1073741824"
+      ADMIN_USERNAME: demo
+      # Optional bot (leave empty for mock console deep-links)
+      TELEGRAM_BOT_TOKEN: ""
+      TELEGRAM_BOT_USERNAME: tecloudapp_bot
+      TELEGRAM_WEBHOOK_SECRET: ""
+    volumes:
+      - tecloud_storage:/data/storage
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 45s
+
+volumes:
+  tecloud_pg:
+  tecloud_storage:
