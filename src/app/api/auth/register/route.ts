@@ -33,7 +33,11 @@ export async function POST(req: Request) {
     const msg = e instanceof Error ? e.message : "";
     if (msg === "USERNAME_TAKEN") return jsonError(409, "USERNAME_TAKEN", "Username already taken");
     if (msg === "INVALID_USERNAME") return jsonError(400, "INVALID_USERNAME", "Invalid username");
-    console.error(e);
+    if (msg.startsWith("Invalid environment:")) {
+      console.error(e);
+      return jsonError(500, "ENV_INVALID", msg);
+    }
+    console.error("[auth/register]", e);
     return jsonError(500, "INTERNAL", "Something went wrong");
   }
 }

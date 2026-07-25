@@ -1,13 +1,16 @@
 import { createHash, randomBytes, timingSafeEqual } from "crypto";
-import argon2 from "argon2";
+import * as argon2 from "argon2";
+
+/** Support both CJS named exports and ESM default interop from native addon */
+const argon = (argon2 as unknown as { default?: typeof argon2 }).default ?? argon2;
 
 export async function hashPassword(password: string): Promise<string> {
-  return argon2.hash(password, { type: argon2.argon2id });
+  return argon.hash(password, { type: argon.argon2id });
 }
 
 export async function verifyPassword(hash: string, password: string): Promise<boolean> {
   try {
-    return await argon2.verify(hash, password);
+    return await argon.verify(hash, password);
   } catch {
     return false;
   }

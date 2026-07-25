@@ -6,7 +6,7 @@ const emptyToUndef = (v: unknown) => (typeof v === "string" && v.trim() === "" ?
 const schema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   APP_URL: z.string().url().default("http://localhost:3000"),
-  SESSION_SECRET: z.string().min(32),
+  SESSION_SECRET: z.string().min(32, "SESSION_SECRET must be at least 32 characters"),
   DATABASE_URL: z.string().min(1),
   STORAGE_DRIVER: z.enum(["mock", "telegram"]).default("mock"),
   STORAGE_PATH: z.string().default("./data/storage"),
@@ -20,11 +20,8 @@ const schema = z.object({
     z.string().min(3).max(64).default("TeCloudBot"),
   ),
   TELEGRAM_WEBHOOK_SECRET: z.preprocess(emptyToUndef, z.string().min(8).optional()),
-  // MTProto storage (user account) — from https://my.telegram.org + scripts/telegram-session.mjs
-  TELEGRAM_API_ID: z.preprocess(
-    emptyToUndef,
-    z.coerce.number().int().positive().optional(),
-  ),
+  // MTProto storage (user account)
+  TELEGRAM_API_ID: z.preprocess(emptyToUndef, z.coerce.number().int().positive().optional()),
   TELEGRAM_API_HASH: z.preprocess(emptyToUndef, z.string().min(8).optional()),
   TELEGRAM_SESSION: z.preprocess(emptyToUndef, z.string().min(10).optional()),
   TELEGRAM_STORAGE_CHAT_ID: z.preprocess(

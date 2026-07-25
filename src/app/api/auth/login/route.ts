@@ -25,7 +25,11 @@ export async function POST(req: Request) {
     if (msg === "NOT_VERIFIED") {
       return jsonError(403, "NOT_VERIFIED", "Please verify your account via Telegram before signing in");
     }
-    console.error(e);
+    if (msg.startsWith("Invalid environment:")) {
+      console.error(e);
+      return jsonError(500, "ENV_INVALID", msg);
+    }
+    console.error("[auth/login]", e);
     return jsonError(500, "INTERNAL", "Something went wrong");
   }
 }
