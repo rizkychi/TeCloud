@@ -1,10 +1,14 @@
 # TeCloud
 
-Personal cloud storage with a Google Drive-like UX. Nested folders, trash/restore, share (private / public / password), admin, star/recent/versioning. Auth: username + Telegram bot deep-link for verify/reset.
+[![GitHub](https://img.shields.io/badge/GitHub-rizkychi%2FTeCloud-181717?logo=github)](https://github.com/rizkychi/TeCloud)
+
+Personal cloud storage with a Google Drive–like UX: nested folders, trash/restore, share (private / public / password), admin, star/recent/versioning. Auth is **username** + **Telegram bot** deep-link for verify/reset.
+
+**Repo:** https://github.com/rizkychi/TeCloud
 
 **Storage drivers**
-- `mock` — local filesystem under `STORAGE_PATH` (default)
-- `telegram` — MTProto user session (GramJS): blobs as documents in a chat
+- `mock` — local filesystem under `STORAGE_PATH` (default, Coolify volume)
+- `telegram` — MTProto user session (GramJS): file blobs as documents in a chat
 
 ## Stack
 
@@ -13,149 +17,144 @@ Personal cloud storage with a Google Drive-like UX. Nested folders, trash/restor
 - Argon2id passwords, HttpOnly session cookies
 - GramJS (`telegram`) optional MTProto storage
 - Telegram Bot API for verify/reset deep-links
-- Docker multi-stage + Coolify-ready entrypoint
+- Multi-stage **Dockerfile** + entrypoint (migrate → start) — Coolify-ready
 
-## Quick start (local dev)
+## Deploy on Coolify
+
+Repo sudah di GitHub. Di Coolify cukup connect / clone project ini.
+
+### 1) Resources
+
+1. **Database** → New **PostgreSQL** → salin `DATABASE_URL` (pakai SSL bila tersedia).
+2. **Application** → New resource → sumber **GitHub**  
+   - Repository: [`rizkychi/TeCloud`](https://github.com/rizkychi/TeCloud)  
+   - Branch: `master` (atau branch yang kamu pakai)  
+   - Build pack: **Dockerfile** (root `Dockerfile`, auto-detect)
+3. **Domain** → pasang HTTPS domain (Coolify/Traefik). Nilai itu jadi `APP_URL`.
+
+### 2) Environment variables
+
+| Variable | Required | Example / notes |
+|----------|----------|-----------------|
+| `NODE_ENV` | yes | `production` |
+| `PORT` | yes | `3000` |
+| `APP_URL` | yes | `https://drive.example.com` — **harus** URL HTTPS publik yang sama dengan domain |
+| `SESSION_SECRET` | yes | ≥32 random chars |
+| `DATABASE_URL` | yes | dari Coolify Postgres |
+| `STORAGE_DRIVER` | yes | `mock` (atau `telegram` setelah setup session) |
+| `STORAGE_PATH` | yes | `/data/storage` |
+| `MAX_UPLOAD_BYTES` | no | `1073741824` (1 GB) |
+| `ADMIN_USERNAME` | no | bootstrap admin username (opsional) |
+| `TELEGRAM_BOT_TOKEN` | no | token BotFather; kosong = deep-link di-log ke console |
+| `TELEGRAM_BOT_USERNAME` | no | tanpa `@` |
+| `TELEGRAM_WEBHOOK_SECRET` | no | random; dipakai validasi header webhook |
+| `TELEGRAM_API_ID` / `TELEGRAM_API_HASH` / `TELEGRAM_SESSION` | no | hanya jika `STORAGE_DRIVER=telegram` |
+| `TELEGRAM_STORAGE_CHAT_ID` | no | `me` (Saved Messages) / id channel / `@username` |
+
+Lihat juga [`.env.example`](.env.example). **Jangan** commit file `.env` (sudah di-gitignore).
+
+### 3) Persistent volume
+
+| Coolify volume | Container path |
+|----------------|----------------|
+| `tecloud-storage` (nama bebas) | `/data/storage` |
+
+Wajib untuk blob mock **dan** index Telegram (`.tg-index.json`).
+
+### 4) Healthcheck
+
+- Path: `GET /api/health`
+- Response: `{ "status": "ok", "storage": "mock"|"telegram", "storageProbe": {...}, ... }`
+- Image sudah mendefinisikan `HEALTHCHECK`; Coolify bisa pakai path yang sama.
+
+**Boot order (entrypoint):**
+
+1. `chown` volume storage (root → drop ke user `nextjs` via `gosu`)
+2. `prisma migrate deploy`
+3. `node server.js` (Next standalone di `0.0.0.0:$PORT`)
+
+### 5) Setelah deploy pertama
 
 ```bash
-git clone <your-repo-url> tecloud && cd tecloud
+# set webhook bot (jika TELEGRAM_BOT_TOKEN diisi)
+curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" \
+  -d "url=$APP_URL/api/telegram/webhook" \
+  -d "secret_token=$TELEGRAM_WEBHOOK_SECRET"
+```
+
+Daftar user pertama lewat UI `/register`, lalu verifikasi lewat bot Telegram.
+
+### 6) Upload besar (1 GB)
+
+Di reverse proxy Coolify / Traefik / nginx:
+
+- body size ≥ `1024m`
+- `proxy_read_timeout` / `proxy_send_timeout` panjang (upload multi-menit)
+
+App sudah stream upload dan enforce `MAX_UPLOAD_BYTES`.
+
+### Cookie / HTTPS
+
+Cookie session `Secure` hanya aktif bila **`APP_URL` diawali `https://`**.  
+Kalau `APP_URL=http://…` di production, login bisa 200 tapi browser buang cookie → `/api/auth/me` = 401. Selalu set `APP_URL` ke domain HTTPS Coolify.
+
+## Quick start (local)
+
+```bash
+git clone https://github.com/rizkychi/TeCloud.git
+cd TeCloud
 cp .env.example .env
 # edit SESSION_SECRET (>=32 chars)
+# local DB contoh: postgresql://tecloud:tecloud@localhost:5433/tecloud
 
-docker compose up -d db          # Postgres on localhost:5433
+docker compose up -d db          # Postgres → localhost:5433
 npm install
 npx prisma migrate dev
 npm run dev                      # http://localhost:3000
 ```
 
-Or full prod-like stack:
+Full stack mirip production:
 
 ```bash
 docker compose up -d --build
 # http://localhost:3000  ·  health: /api/health
 ```
 
-## Deploy on Coolify (GitHub clone)
-
-### 1) Push this repo to GitHub
+## Storage: Telegram MTProto (opsional)
 
 ```bash
-git init
-git add .
-git commit -m "Initial TeCloud"
-# create empty repo on GitHub, then:
-git remote add origin git@github.com:<you>/tecloud.git
-git branch -M main
-git push -u origin main
-```
-
-Do **not** commit `.env` (gitignored). Only `.env.example` is tracked.
-
-### 2) Coolify resources
-
-1. **Database** → New PostgreSQL → copy connection URL (`DATABASE_URL`). Prefer SSL if Coolify offers it.
-2. **Application** → New resource → **Dockerfile** (root `Dockerfile`).
-   - Connect the GitHub repo (or public clone URL).
-   - Build pack: Dockerfile (auto-detected).
-3. **Domain** → attach HTTPS domain (Coolify/Traefik). Set that origin as `APP_URL`.
-
-### 3) Environment variables
-
-| Variable | Required | Example / notes |
-|----------|----------|-----------------|
-| `NODE_ENV` | yes | `production` |
-| `PORT` | yes | `3000` |
-| `APP_URL` | yes | `https://drive.example.com` (must match public HTTPS) |
-| `SESSION_SECRET` | yes | ≥32 random chars |
-| `DATABASE_URL` | yes | from Coolify Postgres |
-| `STORAGE_DRIVER` | yes | `mock` (or `telegram` after session setup) |
-| `STORAGE_PATH` | yes | `/data/storage` |
-| `MAX_UPLOAD_BYTES` | no | `1073741824` (1 GB) |
-| `ADMIN_USERNAME` | no | first matching user becomes admin bootstrap if used |
-| `TELEGRAM_BOT_TOKEN` | no | BotFather token; empty = mock console links |
-| `TELEGRAM_BOT_USERNAME` | no | without `@` |
-| `TELEGRAM_WEBHOOK_SECRET` | no | random; required for webhook header check in prod |
-| `TELEGRAM_API_ID` / `HASH` / `SESSION` | no | only if `STORAGE_DRIVER=telegram` |
-| `TELEGRAM_STORAGE_CHAT_ID` | no | `me` or channel id |
-
-### 4) Persistent storage
-
-Mount a volume:
-
-| Host / Coolify volume | Container path |
-|-----------------------|----------------|
-| `tecloud-storage` | `/data/storage` |
-
-Needed for mock blobs **and** Telegram index file (`.tg-index.json`).
-
-### 5) Healthcheck
-
-- Path: `GET /api/health`
-- Expect JSON `{ "status": "ok", "storage": "mock"|"telegram", ... }`
-- Image already defines `HEALTHCHECK`; Coolify can use the same path.
-
-Container boot order (entrypoint):
-
-1. `chown` storage volume (root → drop to `nextjs` via `gosu`)
-2. `prisma migrate deploy`
-3. `node server.js` (Next standalone on `0.0.0.0:$PORT`)
-
-### 6) After first deploy
-
-```bash
-# set Telegram webhook (if bot enabled)
-curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" \
-  -d "url=$APP_URL/api/telegram/webhook" \
-  -d "secret_token=$TELEGRAM_WEBHOOK_SECRET"
-```
-
-Register first user in the UI, or use an existing admin username from `ADMIN_USERNAME`.
-
-### 7) Large uploads (1 GB)
-
-On the Coolify/Traefik/nginx edge:
-
-- body size ≥ 1024m
-- long proxy read/send timeouts (multi-minute uploads)
-
-App already streams uploads and enforces `MAX_UPLOAD_BYTES`.
-
-### Cookie / HTTPS gotcha
-
-Session cookie `Secure` is set only when **`APP_URL` starts with `https://`**.  
-If `APP_URL` is `http://…` while `NODE_ENV=production`, login may return 200 but the browser drops the cookie → `/api/auth/me` = 401. Always use public HTTPS `APP_URL` in Coolify.
-
-## Storage: Telegram MTProto (optional)
-
-```bash
-# local machine (interactive)
+# di mesin lokal (interaktif: phone + code)
 TELEGRAM_API_ID=… TELEGRAM_API_HASH=… npm run telegram:session
-# paste TELEGRAM_SESSION into Coolify env, set STORAGE_DRIVER=telegram, redeploy
+# tempel TELEGRAM_SESSION ke env Coolify
+# STORAGE_DRIVER=telegram → redeploy
 ```
 
-Incomplete MTProto env → automatic **fallback to mock** + console warning.
+Env MTProto tidak lengkap → **fallback otomatis ke mock** + warning di log.
 
 ## Features
 
-- Sign up / sign in (username) · Telegram verify + forgot password
-- Nested folders (depth 32) · trash/restore · share file/folder
-- Upload/download/preview · zip/unzip · star/recent · versioning
-- Admin: users, quota (GB), themes, stats
-- i18n EN/ID · multi-theme
+- Sign up / sign in (username) · verify + forgot password via Telegram bot
+- Nested folders (depth max 32) · trash / restore · share file & folder
+- Upload / download / preview · zip / unzip · star / recent · versioning
+- Admin: users, kuota (GB), themes, stats
+- i18n EN / ID · multi-theme
 
 ## API sketch
 
-- Auth: `/api/auth/*` · Drive: `/api/drive` · Files/folders CRUD + share
-- `POST /api/zip` · `/api/unzip` · `/api/star`
-- `POST /api/telegram/webhook`
-- `GET /api/health`
+| Area | Endpoints |
+|------|-----------|
+| Auth | `/api/auth/register` · `login` · `logout` · `me` · `profile` · verify/reset |
+| Drive | `GET /api/drive` · folders/files CRUD · share · download · preview · versions |
+| Bulk | `POST /api/zip` · `/api/unzip` · `/api/star` |
+| Bot | `POST /api/telegram/webhook` |
+| Health | `GET /api/health` |
 
 ## Security notes
 
-- Server-side authz on every object id (IDOR-safe by design)
-- Argon2id passwords · hashed session tokens in DB
-- Share unlock rate-limited · CSP / frame deny / nosniff via middleware
-- Secrets only via env — never commit `.env`
+- Authz di server pada setiap object id (cegah IDOR)
+- Password Argon2id · session token di-hash di DB
+- Unlock share rate-limited · CSP / frame deny / nosniff via middleware
+- Secret hanya lewat env — jangan commit `.env`
 
 ## License
 
