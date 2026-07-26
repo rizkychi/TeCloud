@@ -30,6 +30,8 @@ export function PublicShareView({
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<any>(null);
   const [unlocking, setUnlocking] = useState(false);
+  const [attempts, setAttempts] = useState(0);
+  const [pwShake, setPwShake] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -72,14 +74,18 @@ export function PublicShareView({
       });
       const json = await res.json();
       if (!res.ok) {
-        setError(
-          json?.error?.code === "INVALID_PASSWORD"
-            ? dict.invalidPassword
-            : json?.error?.message || dict.errorGeneric,
-        );
+        const invalid = json?.error?.code === "INVALID_PASSWORD";
+        setError(invalid ? dict.invalidPassword : json?.error?.message || dict.errorGeneric);
+        if (invalid) {
+          setPassword("");
+          setPwShake(true);
+          setAttempts((n) => n + 1);
+          window.setTimeout(() => setPwShake(false), 450);
+        }
         return;
       }
       setPassword("");
+      setAttempts(0);
       await load();
     } finally {
       setUnlocking(false);
@@ -121,10 +127,24 @@ export function PublicShareView({
             {error}
           </div>
         ) : needsPassword ? (
-          <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0b1220]/90 shadow-2xl shadow-black/30 backdrop-blur">
-            <div className="border-b border-white/10 bg-gradient-to-r from-indigo-500/15 to-sky-500/10 px-5 py-4">
+          <div
+            className={`overflow-hidden rounded-2xl border bg-[#0b1220]/90 shadow-2xl shadow-black/30 backdrop-blur ${
+              error ? "border-red-500/40" : "border-white/10"
+            }`}
+          >
+            <div
+              className={`border-b px-5 py-4 ${
+                error
+                  ? "border-red-500/20 bg-gradient-to-r from-red-500/15 to-rose-500/10"
+                  : "border-white/10 bg-gradient-to-r from-indigo-500/15 to-sky-500/10"
+              }`}
+            >
               <div className="flex items-center gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-indigo-500/20 text-indigo-300">
+                <div
+                  className={`flex h-11 w-11 items-center justify-center rounded-xl ${
+                    error ? "bg-red-500/20 text-red-300" : "bg-indigo-500/20 text-indigo-300"
+                  }`}
+                >
                   <Lock className="h-5 w-5" />
                 </div>
                 <div className="min-w-0">
@@ -136,24 +156,38 @@ export function PublicShareView({
               </div>
             </div>
             <div className="space-y-3 p-5">
-              <div className="space-y-1.5">
+              <div className={`space-y-1.5 ${pwShake ? "animate-pw-shake" : ""}`}>
                 <label className="text-xs text-slate-400">{dict.password}</label>
                 <Input
                   type="password"
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    if (error) setError(null);
+                  }}
                   placeholder={dict.password}
                   onKeyDown={(e) => e.key === "Enter" && unlock()}
                   autoFocus
+                  aria-invalid={Boolean(error)}
+                  className={error ? "border-red-500/50 focus:ring-red-500/30" : undefined}
                 />
                 <p className="text-[11px] text-slate-500">{dict.publicPasswordHint}</p>
               </div>
               {error && (
-                <p className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
-                  {error}
-                </p>
+                <div className="rounded-xl border border-red-500/35 bg-red-500/10 px-3 py-2.5" role="alert">
+                  <p className="text-sm font-medium text-red-200">{error}</p>
+                  <p className="mt-1 text-[11px] text-red-200/75">
+                    {dict.publicPasswordRetry}
+                    {attempts > 1 ? ` (${attempts})` : ""}
+                  </p>
+                </div>
               )}
-              <Button variant="primary" className="w-full sm:w-auto" onClick={unlock} disabled={unlocking || !password}>
+              <Button
+                variant="primary"
+                className="w-full sm:w-auto"
+                onClick={unlock}
+                disabled={unlocking || !password}
+              >
                 {unlocking ? dict.loading : dict.unlock}
               </Button>
             </div>

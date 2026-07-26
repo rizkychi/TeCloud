@@ -10,7 +10,6 @@ import {
   Users,
   Files,
   Folder,
-  Star,
   Share2,
   UserCheck,
   UserX,
@@ -355,52 +354,113 @@ export function AdminApp({
               </div>
             ) : tab === "dashboard" ? (
               <div className="space-y-6">
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                  <StatCard icon={<Users className="h-4 w-4" />} label={dict.totalUsers} value={String(stats.totals.users)} sub={`${stats.totals.activeUsers} ${dict.activeUsers}`} />
-                  <StatCard icon={<UserCheck className="h-4 w-4" />} label={dict.activeUsers} value={String(stats.totals.activeUsers)} sub={`${stats.totals.disabledUsers} ${dict.disabledUsers}`} />
-                  <StatCard icon={<Files className="h-4 w-4" />} label={dict.totalFiles} value={String(stats.totals.files)} sub={`${stats.totals.folders} ${dict.totalFolders}`} />
-                  <StatCard icon={<HardDrive className="h-4 w-4" />} label={dict.totalStorage} value={`${stats.totals.storageGb} GB`} sub={formatBytes(stats.totals.storageBytes)} />
-                  <StatCard icon={<Star className="h-4 w-4" />} label={dict.starred} value={String(stats.totals.starredFiles + stats.totals.starredFolders)} sub={`${stats.totals.starredFiles} files`} />
-                  <StatCard icon={<Share2 className="h-4 w-4" />} label={dict.sharedFiles} value={String(stats.totals.sharedFiles)} />
-                  <StatCard icon={<Folder className="h-4 w-4" />} label={dict.avgFileSize} value={formatBytes(stats.totals.avgFileBytes)} />
-                  <StatCard icon={<Shield className="h-4 w-4" />} label={dict.defaultQuota} value={`${stats.totals.defaultQuotaGb} GB`} />
+                <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+                  <StatCard
+                    icon={<Users className="h-4 w-4" />}
+                    tint="sky"
+                    label={dict.totalUsers}
+                    value={String(stats.totals.users)}
+                    sub={`${stats.totals.activeUsers} ${dict.activeUsers} · ${stats.totals.disabledUsers} ${dict.disabledUsers}`}
+                  />
+                  <StatCard
+                    icon={<Shield className="h-4 w-4" />}
+                    tint="indigo"
+                    label={dict.admin}
+                    value={String(stats.totals.admins)}
+                    sub={`${stats.totals.users - stats.totals.admins} user`}
+                  />
+                  <StatCard
+                    icon={<Files className="h-4 w-4" />}
+                    tint="violet"
+                    label={dict.totalFiles}
+                    value={String(stats.totals.files)}
+                    sub={`${stats.totals.folders} ${dict.totalFolders}`}
+                  />
+                  <StatCard
+                    icon={<HardDrive className="h-4 w-4" />}
+                    tint="emerald"
+                    label={dict.totalStorage}
+                    value={formatBytes(stats.totals.storageBytes)}
+                    sub={`${dict.avgFileSize}: ${formatBytes(stats.totals.avgFileBytes)}`}
+                  />
+                  <StatCard
+                    icon={<Share2 className="h-4 w-4" />}
+                    tint="amber"
+                    label={dict.sharedFiles}
+                    value={String(stats.totals.sharedFiles)}
+                    sub={`${stats.totals.starredFiles + stats.totals.starredFolders} ${dict.starred}`}
+                  />
+                  <StatCard
+                    icon={<Folder className="h-4 w-4" />}
+                    tint="rose"
+                    label={dict.defaultQuota}
+                    value={formatBytes(stats.totals.defaultQuotaBytes)}
+                    sub={`${stats.totals.starredFiles} ★ files`}
+                  />
                 </div>
 
                 <div className="grid gap-4 lg:grid-cols-2">
                   <div className="rounded-2xl border tc-border bg-[var(--panel)] p-4">
-                    <h3 className="mb-4 text-sm font-medium">{dict.uploadsChart}</h3>
-                    <div className="chart-bars">
-                      {stats.uploadsByDay.map((d) => (
-                        <div
-                          key={d.date}
-                          className="bar"
-                          title={`${d.date}: ${d.count} · ${formatBytes(d.bytes)}`}
-                          style={{ height: `${Math.max(6, (d.count / maxUploadBar) * 100)}%` }}
-                        />
-                      ))}
+                    <div className="mb-3 flex items-center justify-between gap-2">
+                      <h3 className="text-sm font-medium">{dict.uploadsChart}</h3>
+                      <span className="text-[10px] text-[var(--faint)]">max {maxUploadBar}</span>
                     </div>
-                    <div className="mt-2 flex justify-between text-[10px] text-[var(--faint)]">
+                    <div className="chart-wrap">
+                      <div className="chart-y" aria-hidden>
+                        <span>{maxUploadBar}</span>
+                        <span>{Math.round(maxUploadBar / 2)}</span>
+                        <span>0</span>
+                      </div>
+                      <div className="chart-bars">
+                        {stats.uploadsByDay.map((d) => (
+                          <div
+                            key={d.date}
+                            className="bar"
+                            style={{ height: `${Math.max(6, (d.count / maxUploadBar) * 100)}%` }}
+                          >
+                            <span className="chart-bar-tip">
+                              {d.date}: {d.count} · {formatBytes(d.bytes)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="mt-2 flex justify-between pl-8 text-[10px] text-[var(--faint)]">
                       <span>{stats.uploadsByDay[0]?.date}</span>
                       <span>{stats.uploadsByDay[stats.uploadsByDay.length - 1]?.date}</span>
                     </div>
                   </div>
 
                   <div className="rounded-2xl border tc-border bg-[var(--panel)] p-4">
-                    <h3 className="mb-4 text-sm font-medium">{dict.signupsChart}</h3>
-                    <div className="chart-bars">
-                      {stats.signupsByDay.map((d) => (
-                        <div
-                          key={d.date}
-                          className="bar"
-                          title={`${d.date}: ${d.count}`}
-                          style={{
-                            height: `${Math.max(6, (d.count / maxSignupBar) * 100)}%`,
-                            background: "linear-gradient(180deg, var(--accent), color-mix(in srgb, var(--accent) 50%, var(--brand)))",
-                          }}
-                        />
-                      ))}
+                    <div className="mb-3 flex items-center justify-between gap-2">
+                      <h3 className="text-sm font-medium">{dict.signupsChart}</h3>
+                      <span className="text-[10px] text-[var(--faint)]">max {maxSignupBar}</span>
                     </div>
-                    <div className="mt-2 flex justify-between text-[10px] text-[var(--faint)]">
+                    <div className="chart-wrap">
+                      <div className="chart-y" aria-hidden>
+                        <span>{maxSignupBar}</span>
+                        <span>{Math.round(maxSignupBar / 2)}</span>
+                        <span>0</span>
+                      </div>
+                      <div className="chart-bars">
+                        {stats.signupsByDay.map((d) => (
+                          <div
+                            key={d.date}
+                            className="bar"
+                            style={{
+                              height: `${Math.max(6, (d.count / maxSignupBar) * 100)}%`,
+                              background:
+                                "linear-gradient(180deg, var(--accent), color-mix(in srgb, var(--accent) 50%, var(--brand)))",
+                            }}
+                          >
+                            <span className="chart-bar-tip">
+                              {d.date}: {d.count}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="mt-2 flex justify-between pl-8 text-[10px] text-[var(--faint)]">
                       <span>{stats.signupsByDay[0]?.date}</span>
                       <span>{stats.signupsByDay[stats.signupsByDay.length - 1]?.date}</span>
                     </div>
@@ -416,10 +476,10 @@ export function AdminApp({
                         <div key={u.userId} className="flex items-center justify-between rounded-lg border tc-border px-3 py-2 text-sm">
                           <div className="min-w-0">
                             <div className="truncate font-medium">{u.name}</div>
-                            <div className="truncate text-xs text-[var(--muted)]">{u.username}</div>
+                            <div className="truncate text-xs text-[var(--muted)]">@{u.username}</div>
                           </div>
                           <div className="text-right text-xs text-[var(--muted)]">
-                            <div>{u.gb} GB</div>
+                            <div className="tabular-nums text-[var(--text)]">{formatBytes(u.bytes)}</div>
                             <div>
                               {u.files} {dict.items}
                             </div>
@@ -500,7 +560,7 @@ export function AdminApp({
                               )}
                             </div>
                             <div className="text-[10px] text-[var(--faint)]">
-                              {u.fileCount} files · {u.usedGb} GB used · {new Date(u.createdAt).toLocaleString(locale)}
+                              {u.fileCount} files · {formatBytes(u.usedBytes)} used · {new Date(u.createdAt).toLocaleString(locale)}
                             </div>
                           </td>
                           <td className="px-4 py-3 w-36">
@@ -526,7 +586,7 @@ export function AdminApp({
                           </td>
                           <td className="px-4 py-3 w-48">
                             <div className="mb-1 text-xs text-[var(--muted)]">
-                              {u.usedGb} / {u.effectiveQuotaGb} GB
+                              {formatBytes(u.usedBytes)} / {formatBytes(u.effectiveQuotaBytes)}
                               {u.quotaGb == null ? ` (${dict.useDefaultQuota})` : ""}
                             </div>
                             <div className="quota-bar">
@@ -759,20 +819,22 @@ function StatCard({
   label,
   value,
   sub,
+  tint = "indigo",
 }: {
   icon: React.ReactNode;
   label: string;
   value: string;
   sub?: string;
+  tint?: "sky" | "emerald" | "violet" | "amber" | "rose" | "indigo";
 }) {
   return (
-    <div className="rounded-2xl border tc-border bg-[var(--panel)] p-4">
-      <div className="mb-3 flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--surface-2)] text-[var(--brand-hover)]">
-        {icon}
+    <div className="stat-card">
+      <div className={`stat-icon tint-${tint}`}>{icon}</div>
+      <div className="min-w-0">
+        <div className="stat-label">{label}</div>
+        <div className="stat-value">{value}</div>
+        {sub ? <div className="stat-sub">{sub}</div> : null}
       </div>
-      <div className="text-xs text-[var(--muted)]">{label}</div>
-      <div className="mt-1 text-xl font-medium tracking-tight">{value}</div>
-      {sub ? <div className="mt-1 text-[11px] text-[var(--faint)]">{sub}</div> : null}
     </div>
   );
 }

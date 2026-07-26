@@ -1,12 +1,13 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/loading";
 import { pushToast } from "@/components/ui/toast";
 import type { Dictionary } from "@/lib/i18n/dictionaries";
-import { isImageMime } from "@/lib/format";
+import { isCodeLike, isImageMime } from "@/lib/format";
 import { Link2 } from "lucide-react";
 
 export function Modal({
@@ -248,28 +249,83 @@ export function PreviewModal({
   mimeType: string;
   onClose: () => void;
 }) {
+  const isPdf = mimeType === "application/pdf" || name.toLowerCase().endsWith(".pdf");
+  const isImage = isImageMime(mimeType);
+  const codeLike = !isImage && !isPdf && isCodeLike(mimeType, name);
+
+  const [text, setText] = useState<string | null>(null);
+  const [loading, setLoading] = useState(codeLike);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!codeLike) return;
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    setText(null);
+    (async () => {
+      try {
+        const res = await fetch(`/api/files/${id}/preview`);
+        if (!res.ok) {
+          const j = await res.json().catch(() => null);
+          throw new Error(j?.error?.message || dict.errorGeneric);
+        }
+        const body = await res.text();
+        if (!cancelled) setText(body);
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : dict.errorGeneric);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [codeLike, id, dict.errorGeneric]);
+
   return (
     <Modal title={name} onClose={onClose} wide>
       <div className="max-h-[70vh] overflow-auto rounded-lg border tc-border bg-[var(--surface-2)] p-2">
-        {isImageMime(mimeType) ? (
+        {isImage ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={`/api/files/${id}/preview`}
             alt={name}
             className="mx-auto max-h-[65vh] object-contain"
           />
-        ) : mimeType === "application/pdf" || name.toLowerCase().endsWith(".pdf") ? (
+        ) : isPdf ? (
           <iframe
             title={name}
             src={`/api/files/${id}/preview`}
             className="h-[65vh] w-full rounded-md bg-white"
+            sandbox=""
           />
+        ) : codeLike ? (
+          <div className="code-preview">
+            {loading ? (
+              <div className="flex items-center gap-2 p-4 text-sm text-[var(--muted)]">
+                <Spinner /> {dict.loading}
+              </div>
+            ) : error ? (
+              <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">
+                {error}
+              </div>
+            ) : (
+              <pre className="code-preview-pre" tabIndex={0}>
+                <code>{text ?? ""}</code>
+              </pre>
+            )}
+          </div>
         ) : (
-          <iframe
-            title={name}
-            src={`/api/files/${id}/preview`}
-            className="h-[65vh] w-full rounded-md bg-[var(--panel)] text-[var(--text)]"
-          />
+          <div className="flex min-h-[12rem] flex-col items-center justify-center gap-2 p-6 text-center text-sm text-[var(--muted)]">
+            <p>{dict.previewUnsupported}</p>
+            <a
+              className="inline-flex h-9 items-center rounded-lg border tc-border px-3 text-sm tc-hover"
+              href={`/api/files/${id}/download`}
+            >
+              {dict.download}
+            </a>
+          </div>
         )}
       </div>
       <div className="mt-3 flex justify-end gap-2">
