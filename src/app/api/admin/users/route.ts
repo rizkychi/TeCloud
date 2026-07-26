@@ -1,7 +1,7 @@
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { jsonError, jsonOk } from "@/lib/api";
-import { getDefaultQuotaBytes } from "@/lib/quota";
+import { getDefaultQuotaBytes, isUnlimitedQuota } from "@/lib/quota";
 import { bytesToGb } from "@/lib/units";
 
 export const runtime = "nodejs";
@@ -41,10 +41,13 @@ export async function GET() {
 
     return jsonOk({
       defaultQuotaBytes: defaultQuota,
-      defaultQuotaGb: bytesToGb(defaultQuota),
+      defaultQuotaGb: isUnlimitedQuota(defaultQuota) ? 0 : bytesToGb(defaultQuota),
+      defaultQuotaUnlimited: isUnlimitedQuota(defaultQuota),
       users: users.map((u) => {
         const usedBytes = usageMap[u.id]?.bytes || 0;
-        const effective = u.quotaBytes != null ? Number(u.quotaBytes) : defaultQuota;
+        const custom = u.quotaBytes != null ? Number(u.quotaBytes) : null;
+        const effective = custom != null ? custom : defaultQuota;
+        const unlimited = isUnlimitedQuota(effective);
         return {
           id: u.id,
           username: u.username,
@@ -55,10 +58,12 @@ export async function GET() {
           verified: Boolean(u.verifiedAt),
           telegramId: u.telegramId,
           theme: u.theme,
-          quotaBytes: u.quotaBytes != null ? Number(u.quotaBytes) : null,
-          quotaGb: u.quotaBytes != null ? bytesToGb(Number(u.quotaBytes)) : null,
+          quotaBytes: custom,
+          quotaGb: custom == null ? null : isUnlimitedQuota(custom) ? 0 : bytesToGb(custom),
+          quotaUnlimited: unlimited,
+          quotaMode: custom == null ? "default" : isUnlimitedQuota(custom) ? "unlimited" : "custom",
           effectiveQuotaBytes: effective,
-          effectiveQuotaGb: bytesToGb(effective),
+          effectiveQuotaGb: unlimited ? 0 : bytesToGb(effective),
           usedBytes,
           usedGb: bytesToGb(usedBytes),
           fileCount: usageMap[u.id]?.files ?? u._count.files,

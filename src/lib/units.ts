@@ -1,4 +1,6 @@
 export function gbToBytes(gb: number): number {
+  if (!Number.isFinite(gb) || gb < 0) return 0;
+  if (gb === 0) return 0; // unlimited sentinel
   return Math.round(gb * 1024 * 1024 * 1024);
 }
 

@@ -1,7 +1,7 @@
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { jsonError, jsonOk } from "@/lib/api";
-import { getDefaultQuotaBytes } from "@/lib/quota";
+import { getDefaultQuotaBytes, isUnlimitedQuota } from "@/lib/quota";
 import { bytesToGb } from "@/lib/units";
 
 export const runtime = "nodejs";
@@ -122,7 +122,8 @@ export async function GET() {
         storageGb: bytesToGb(storageBytes),
         avgFileBytes: Number(usage._avg.size || 0),
         defaultQuotaBytes,
-        defaultQuotaGb: bytesToGb(defaultQuotaBytes),
+        defaultQuotaGb: isUnlimitedQuota(defaultQuotaBytes) ? 0 : bytesToGb(defaultQuotaBytes),
+        defaultQuotaUnlimited: isUnlimitedQuota(defaultQuotaBytes),
       },
       recentUsers,
       topUsers: topUsage.map((r) => ({

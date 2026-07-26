@@ -986,7 +986,12 @@ export function DriveApp({
     setQuery("");
   }
 
-  const quotaPct = quota.total > 0 ? Math.min(100, (quota.used / quota.total) * 100) : 0;
+  const quotaUnlimited = quota.total === 0;
+  const quotaPct = quotaUnlimited
+    ? Math.min(8, quota.used > 0 ? 8 : 0)
+    : quota.total > 0
+      ? Math.min(100, (quota.used / quota.total) * 100)
+      : 0;
   const canGoBack = nav === "drive" && Boolean(folderId || (data?.breadcrumb?.length ?? 0) > 0);
   const emptyLabel =
     nav === "trash"
@@ -1083,7 +1088,9 @@ export function DriveApp({
             <div className="mb-2 flex items-center justify-between text-xs text-[var(--muted)]">
               <span>{dict.quota}</span>
               <span>
-                {formatBytes(quota.used)} / {formatBytes(quota.total)}
+                {quotaUnlimited
+                  ? `${formatBytes(quota.used)} / ${dict.quotaUnlimited}`
+                  : `${formatBytes(quota.used)} / ${formatBytes(quota.total)}`}
               </span>
             </div>
             <div className="quota-bar">

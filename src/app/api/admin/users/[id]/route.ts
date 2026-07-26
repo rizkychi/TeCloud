@@ -36,7 +36,9 @@ export async function PATCH(req: Request, ctx: Ctx) {
     } = {};
 
     if (parsed.data.quotaGb !== undefined) {
-      data.quotaBytes = parsed.data.quotaGb == null ? null : BigInt(gbToBytes(parsed.data.quotaGb));
+      // null → inherit default; 0 → unlimited; >0 → fixed GB
+      data.quotaBytes =
+        parsed.data.quotaGb == null ? null : BigInt(gbToBytes(parsed.data.quotaGb));
     }
     if (parsed.data.role) data.role = parsed.data.role;
     if (parsed.data.name) data.name = parsed.data.name.trim();

@@ -47,6 +47,7 @@ type Stats = {
     avgFileBytes: number;
     defaultQuotaBytes: number;
     defaultQuotaGb: number;
+    defaultQuotaUnlimited?: boolean;
   };
   recentUsers: Array<{
     id: string;
@@ -81,6 +82,8 @@ type AdminUser = {
   theme: string;
   quotaBytes: number | null;
   quotaGb: number | null;
+  quotaUnlimited?: boolean;
+  quotaMode?: "default" | "unlimited" | "custom";
   effectiveQuotaBytes: number;
   effectiveQuotaGb: number;
   usedBytes: number;
@@ -106,6 +109,7 @@ export function AdminApp({
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [defaultQuotaGb, setDefaultQuotaGb] = useState(5);
   const [defaultQuotaInput, setDefaultQuotaInput] = useState("5");
+  const [defaultQuotaUnlimited, setDefaultQuotaUnlimited] = useState(false);
   const [defaultTheme, setDefaultTheme] = useState("dark");
   const [allowedThemes, setAllowedThemes] = useState<string[]>(THEME_PRESETS.map((t) => t.id));
   const [error, setError] = useState<string | null>(null);
@@ -115,7 +119,13 @@ export function AdminApp({
   const [passwordDrafts, setPasswordDrafts] = useState<Record<string, string>>({});
   const [theme, setTheme] = useState(user.theme || "dark");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const [quotaPopup, setQuotaPopup] = useState<{ id: string; name: string; quotaGb: number | null } | null>(null);
+  const [quotaPopup, setQuotaPopup] = useState<{
+    id: string;
+    name: string;
+    quotaGb: number | null;
+    mode: "default" | "unlimited" | "custom";
+  } | null>(null);
+  const [quotaPopupMode, setQuotaPopupMode] = useState<"default" | "unlimited" | "custom">("default");
   const [quotaPopupValue, setQuotaPopupValue] = useState("");
   const [passwordPopup, setPasswordPopup] = useState<{ id: string; name: string } | null>(null);
   const [passwordPopupValue, setPasswordPopupValue] = useState("");
@@ -150,9 +160,15 @@ export function AdminApp({
         drafts[row.id] = row.quotaGb != null ? String(row.quotaGb) : "";
       }
       setQuotaDrafts(drafts);
-      const dq = stj.defaultQuotaGb ?? sj.totals?.defaultQuotaGb ?? 5;
-      setDefaultQuotaGb(dq);
-      setDefaultQuotaInput(String(dq));
+      const unlimited =
+        Boolean(stj.defaultQuotaUnlimited) ||
+        Boolean(sj.totals?.defaultQuotaUnlimited) ||
+        Number(stj.defaultQuotaBytes) === 0 ||
+        Number(sj.totals?.defaultQuotaBytes) === 0;
+      const dq = unlimited ? 0 : (stj.defaultQuotaGb ?? sj.totals?.defaultQuotaGb ?? 5);
+      setDefaultQuotaUnlimited(unlimited);
+      setDefaultQuotaGb(unlimited ? 0 : dq);
+      setDefaultQuotaInput(unlimited ? "" : String(dq));
       setDefaultTheme(stj.defaultTheme || "dark");
       setAllowedThemes(stj.allowedThemes || THEME_PRESETS.map((t) => t.id));
     } catch (e) {
@@ -218,11 +234,17 @@ export function AdminApp({
   }
 
   async function saveSettings() {
-    const n = Number(String(defaultQuotaInput).replace(",", "."));
-    if (!Number.isFinite(n) || n <= 0) {
-      setError(dict.errorGeneric);
-      pushToast("error", dict.errorGeneric);
-      return;
+    let defaultQuotaGbPayload: number;
+    if (defaultQuotaUnlimited) {
+      defaultQuotaGbPayload = 0;
+    } else {
+      const n = Number(String(defaultQuotaInput).replace(",", "."));
+      if (!Number.isFinite(n) || n <= 0) {
+        setError(dict.errorGeneric);
+        pushToast("error", dict.errorGeneric);
+        return;
+      }
+      defaultQuotaGbPayload = n;
     }
     setBusy(dict.saving);
     setError(null);
@@ -231,7 +253,7 @@ export function AdminApp({
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          defaultQuotaGb: n,
+          defaultQuotaGb: defaultQuotaGbPayload,
           defaultTheme,
           allowedThemes,
         }),
@@ -394,7 +416,11 @@ export function AdminApp({
                     icon={<Folder className="h-4 w-4" />}
                     tint="rose"
                     label={dict.defaultQuota}
-                    value={formatBytes(stats.totals.defaultQuotaBytes)}
+                    value={
+                      stats.totals.defaultQuotaUnlimited || stats.totals.defaultQuotaBytes === 0
+                        ? dict.quotaUnlimited
+                        : formatBytes(stats.totals.defaultQuotaBytes)
+                    }
                     sub={`${stats.totals.starredFiles} ★ files`}
                   />
                 </div>
@@ -586,18 +612,27 @@ export function AdminApp({
                           </td>
                           <td className="px-4 py-3 w-48">
                             <div className="mb-1 text-xs text-[var(--muted)]">
-                              {formatBytes(u.usedBytes)} / {formatBytes(u.effectiveQuotaBytes)}
-                              {u.quotaGb == null ? ` (${dict.useDefaultQuota})` : ""}
+                              {u.quotaUnlimited || u.quotaMode === "unlimited" || u.effectiveQuotaBytes === 0
+                                ? `${formatBytes(u.usedBytes)} / ${dict.quotaUnlimited}`
+                                : `${formatBytes(u.usedBytes)} / ${formatBytes(u.effectiveQuotaBytes)}`}
+                              {u.quotaMode === "default" || u.quotaGb == null
+                                ? ` (${dict.useDefaultQuota})`
+                                : u.quotaMode === "unlimited" || u.quotaUnlimited
+                                  ? ` (${dict.quotaUnlimited})`
+                                  : ""}
                             </div>
                             <div className="quota-bar">
                               <span
                                 style={{
-                                  width: `${Math.min(
-                                    100,
-                                    u.effectiveQuotaBytes
-                                      ? (u.usedBytes / u.effectiveQuotaBytes) * 100
-                                      : 0,
-                                  )}%`,
+                                  width:
+                                    u.quotaUnlimited || u.quotaMode === "unlimited" || u.effectiveQuotaBytes === 0
+                                      ? `${Math.min(8, u.usedBytes > 0 ? 8 : 0)}%`
+                                      : `${Math.min(
+                                          100,
+                                          u.effectiveQuotaBytes
+                                            ? (u.usedBytes / u.effectiveQuotaBytes) * 100
+                                            : 0,
+                                        )}%`,
                                 }}
                               />
                             </div>
@@ -623,8 +658,18 @@ export function AdminApp({
                                 variant="subtle"
                                 title={dict.setQuotaPopup}
                                 onClick={() => {
-                                  setQuotaPopup({ id: u.id, name: u.name, quotaGb: u.quotaGb });
-                                  setQuotaPopupValue(u.quotaGb != null ? String(u.quotaGb) : "");
+                                  const mode =
+                                    u.quotaMode ||
+                                    (u.quotaGb == null
+                                      ? "default"
+                                      : u.quotaGb === 0 || u.quotaUnlimited
+                                        ? "unlimited"
+                                        : "custom");
+                                  setQuotaPopup({ id: u.id, name: u.name, quotaGb: u.quotaGb, mode });
+                                  setQuotaPopupMode(mode);
+                                  setQuotaPopupValue(
+                                    mode === "custom" && u.quotaGb != null ? String(u.quotaGb) : "",
+                                  );
                                 }}
                               >
                                 <HardDrive className="h-4 w-4" />
@@ -661,16 +706,34 @@ export function AdminApp({
             ) : (
               <div className="max-w-xl space-y-5 rounded-2xl border tc-border bg-[var(--panel)] p-5">
                 <h3 className="text-sm font-medium">{dict.adminSettings}</h3>
-                <div className="space-y-1.5">
-                  <label className="text-xs text-[var(--muted)]">{dict.defaultQuota} (GB)</label>
-                  <NumberInput
-                    step={0.1}
-                    min={0.1}
-                    value={defaultQuotaInput}
-                    onChange={setDefaultQuotaInput}
-                  />
+                <div className="space-y-2">
+                  <label className="text-xs text-[var(--muted)]">{dict.defaultQuota}</label>
+                  <label className="flex items-center gap-2 text-sm text-[var(--text)]">
+                    <input
+                      type="checkbox"
+                      checked={defaultQuotaUnlimited}
+                      onChange={(e) => {
+                        const on = e.target.checked;
+                        setDefaultQuotaUnlimited(on);
+                        if (on) setDefaultQuotaInput("");
+                        else if (!defaultQuotaInput) setDefaultQuotaInput("5");
+                      }}
+                      className="h-4 w-4 rounded border tc-border"
+                    />
+                    {dict.quotaUnlimited}
+                  </label>
+                  {!defaultQuotaUnlimited && (
+                    <NumberInput
+                      step={0.1}
+                      min={0.1}
+                      value={defaultQuotaInput}
+                      onChange={setDefaultQuotaInput}
+                    />
+                  )}
                   <p className="text-xs text-[var(--faint)]">
-                    Current: {defaultQuotaGb} GB ({formatBytes(Math.round(defaultQuotaGb * 1024 ** 3))})
+                    {defaultQuotaUnlimited
+                      ? dict.quotaHintUnlimited
+                      : `Current: ${defaultQuotaGb} GB (${formatBytes(Math.round(defaultQuotaGb * 1024 ** 3))})`}
                   </p>
                 </div>
                 <div className="space-y-1.5">
@@ -728,27 +791,64 @@ export function AdminApp({
           <div className="w-full max-w-md rounded-2xl border tc-border bg-[var(--surface)] p-4 shadow-[var(--shadow)]">
             <h2 className="mb-1 text-sm font-medium">{dict.setQuotaPopup}</h2>
             <p className="mb-3 text-xs text-[var(--muted)]">{quotaPopup.name}</p>
-            <label className="mb-1 block text-xs text-[var(--muted)]">{dict.quotaGb}</label>
-            <NumberInput
-              step={0.1}
-              min={0.1}
-              placeholder={String(defaultQuotaGb)}
-              value={quotaPopupValue}
-              onChange={setQuotaPopupValue}
-            />
-            <p className="mt-1 text-[11px] text-[var(--faint)]">{dict.useDefaultQuota}: kosongkan input</p>
+            <div className="mb-3 space-y-2">
+              {(
+                [
+                  ["default", dict.useDefaultQuota],
+                  ["unlimited", dict.quotaUnlimited],
+                  ["custom", dict.quotaCustom],
+                ] as const
+              ).map(([mode, label]) => (
+                <label key={mode} className="flex cursor-pointer items-center gap-2 text-sm">
+                  <input
+                    type="radio"
+                    name="quota-mode"
+                    checked={quotaPopupMode === mode}
+                    onChange={() => setQuotaPopupMode(mode)}
+                    className="h-4 w-4"
+                  />
+                  {label}
+                </label>
+              ))}
+            </div>
+            {quotaPopupMode === "custom" && (
+              <>
+                <label className="mb-1 block text-xs text-[var(--muted)]">{dict.quotaGb}</label>
+                <NumberInput
+                  step={0.1}
+                  min={0.1}
+                  placeholder={defaultQuotaUnlimited ? "5" : String(defaultQuotaGb || 5)}
+                  value={quotaPopupValue}
+                  onChange={setQuotaPopupValue}
+                />
+              </>
+            )}
+            <p className="mt-2 text-[11px] text-[var(--faint)]">
+              {quotaPopupMode === "default"
+                ? dict.quotaHintDefault
+                : quotaPopupMode === "unlimited"
+                  ? dict.quotaHintUnlimited
+                  : dict.quotaGb}
+            </p>
             <div className="mt-4 flex justify-end gap-2">
               <Button variant="ghost" onClick={() => setQuotaPopup(null)} disabled={!!busy}>{dict.cancel}</Button>
               <Button
                 variant="primary"
                 disabled={!!busy}
                 onClick={async () => {
-                  const raw = quotaPopupValue.trim();
-                  await updateUser(
-                    quotaPopup.id,
-                    { quotaGb: raw ? Number(raw.replace(",", ".")) : null },
-                    dict.setQuotaPopup,
-                  );
+                  let quotaGb: number | null;
+                  if (quotaPopupMode === "default") quotaGb = null;
+                  else if (quotaPopupMode === "unlimited") quotaGb = 0;
+                  else {
+                    const n = Number(quotaPopupValue.replace(",", "."));
+                    if (!Number.isFinite(n) || n <= 0) {
+                      setError(dict.errorGeneric);
+                      pushToast("error", dict.errorGeneric);
+                      return;
+                    }
+                    quotaGb = n;
+                  }
+                  await updateUser(quotaPopup.id, { quotaGb }, dict.setQuotaPopup);
                   setQuotaPopup(null);
                 }}
               >

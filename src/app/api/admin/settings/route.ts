@@ -2,7 +2,7 @@ import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { jsonError, jsonOk } from "@/lib/api";
 import { adminSettingsSchema } from "@/lib/validations";
-import { getDefaultQuotaBytes } from "@/lib/quota";
+import { getDefaultQuotaBytes, isUnlimitedQuota } from "@/lib/quota";
 import { getAllowedThemes, getDefaultTheme, ensureSystemSettings } from "@/lib/settings";
 import { bytesToGb, gbToBytes } from "@/lib/units";
 
@@ -15,7 +15,8 @@ export async function GET() {
     const defaultQuotaBytes = await getDefaultQuotaBytes();
     return jsonOk({
       defaultQuotaBytes,
-      defaultQuotaGb: bytesToGb(defaultQuotaBytes),
+      defaultQuotaGb: isUnlimitedQuota(defaultQuotaBytes) ? 0 : bytesToGb(defaultQuotaBytes),
+      defaultQuotaUnlimited: isUnlimitedQuota(defaultQuotaBytes),
       defaultTheme: await getDefaultTheme(),
       allowedThemes: await getAllowedThemes(),
     });
@@ -33,8 +34,8 @@ export async function PATCH(req: Request) {
     const parsed = adminSettingsSchema.safeParse(body);
     if (!parsed.success) return jsonError(400, "VALIDATION_ERROR", "Invalid input");
 
-    if (parsed.data.defaultQuotaGb) {
-      const bytes = gbToBytes(parsed.data.defaultQuotaGb);
+    if (parsed.data.defaultQuotaGb !== undefined) {
+      const bytes = gbToBytes(parsed.data.defaultQuotaGb); // 0 stays 0 = unlimited
       await prisma.systemSetting.upsert({
         where: { key: "default_quota_bytes" },
         create: { key: "default_quota_bytes", value: String(bytes) },
@@ -59,7 +60,8 @@ export async function PATCH(req: Request) {
     const defaultQuotaBytes = await getDefaultQuotaBytes();
     return jsonOk({
       defaultQuotaBytes,
-      defaultQuotaGb: bytesToGb(defaultQuotaBytes),
+      defaultQuotaGb: isUnlimitedQuota(defaultQuotaBytes) ? 0 : bytesToGb(defaultQuotaBytes),
+      defaultQuotaUnlimited: isUnlimitedQuota(defaultQuotaBytes),
       defaultTheme: await getDefaultTheme(),
       allowedThemes: await getAllowedThemes(),
     });

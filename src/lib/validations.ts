@@ -85,7 +85,8 @@ export const preferencesSchema = z.object({
 });
 
 export const adminUserUpdateSchema = z.object({
-  quotaGb: z.number().positive().nullable().optional(),
+  // null = use system default, 0 = unlimited, >0 = custom GB
+  quotaGb: z.union([z.number().positive(), z.literal(0), z.null()]).optional(),
   role: z.enum(["user", "admin"]).optional(),
   name: z.string().min(1).max(80).optional(),
   disabled: z.boolean().optional(),
@@ -93,7 +94,8 @@ export const adminUserUpdateSchema = z.object({
 });
 
 export const adminSettingsSchema = z.object({
-  defaultQuotaGb: z.number().positive().optional(),
+  // 0 = unlimited default for users without custom quota
+  defaultQuotaGb: z.union([z.number().positive(), z.literal(0)]).optional(),
   defaultTheme: themeEnum.optional(),
   allowedThemes: z.array(themeEnum).optional(),
 });
