@@ -10,6 +10,8 @@ import { assertQuota } from "@/lib/quota";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+/** Large uploads + Telegram MTProto can take several minutes */
+export const maxDuration = 900;
 
 export async function GET(req: Request) {
   try {
@@ -191,7 +193,18 @@ export async function POST(req: Request) {
     if (e instanceof Error && e.message === "UNAUTHORIZED") {
       return jsonError(401, "UNAUTHORIZED", "Please sign in");
     }
-    console.error(e);
-    return jsonError(500, "INTERNAL", "Something went wrong");
+    console.error("[tecloud:upload]", e);
+    const detail = e instanceof Error ? e.message : String(e);
+    if (
+      detail.includes("TELEGRAM_") ||
+      detail.includes("STORAGE_") ||
+      detail.includes("PATH_TRAVERSAL") ||
+      detail.includes("ENOSPC") ||
+      detail.includes("Body exceeded") ||
+      detail.includes("Request body")
+    ) {
+      return jsonError(500, "UPLOAD_FAILED", detail.slice(0, 300));
+    }
+    return jsonError(500, "INTERNAL", detail.slice(0, 200) || "Something went wrong");
   }
 }

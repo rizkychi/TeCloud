@@ -36,5 +36,9 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  // Skip static assets AND large binary API routes so Next does not clone /
+  // buffer multipart bodies (default clone path breaks >10MB uploads).
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|api/files|api/zip|api/unzip|api/public/.*/download).*)",
+  ],
 };

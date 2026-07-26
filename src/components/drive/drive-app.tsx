@@ -374,7 +374,7 @@ export function DriveApp({
     setUploadJobs(jobs);
     let versioned = false;
     let anyOk = false;
-    setBusy(dict.uploading);
+    // Background upload: progress panel only — no full-screen LoadingOverlay.
     try {
       for (let i = 0; i < files.length; i++) {
         if (cancelQueuedRef.current) {
@@ -412,7 +412,16 @@ export function DriveApp({
             const msg =
               code === "QUOTA_EXCEEDED"
                 ? dict.quotaExceeded
-                : result.json?.error?.message || dict.errorGeneric;
+                : code === "MAX_SIZE"
+                  ? dict.maxSize
+                  : result.json?.error?.message ||
+                    (result.status === 413
+                      ? dict.maxSize
+                      : result.status === 0
+                        ? "Network error"
+                        : result.status >= 500
+                          ? `${dict.errorGeneric} (HTTP ${result.status})`
+                          : dict.errorGeneric);
             setUploadJobs((prev) =>
               prev.map((j) => (j.id === jobId ? { ...j, status: "error", error: msg, progress: 100 } : j)),
             );
@@ -441,7 +450,6 @@ export function DriveApp({
         pushToast("success", versioned ? dict.toastVersioned : dict.toastUploaded);
       }
     } finally {
-      setBusy(null);
       uploadAbortRef.current = null;
     }
   }

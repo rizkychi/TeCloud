@@ -93,14 +93,40 @@ export function uploadWithProgress(
     };
     xhr.onload = () => {
       onProgress(100);
+      let json: any = xhr.response;
+      if (!json || typeof json !== "object") {
+        try {
+          json = JSON.parse(xhr.responseText || "{}");
+        } catch {
+          json = {};
+        }
+      }
+      // Proxy/HTML error pages often have empty json
+      if (!json?.error && xhr.status >= 400) {
+        const text = (xhr.responseText || "").slice(0, 120);
+        json = {
+          error: {
+            code: xhr.status === 413 ? "MAX_SIZE" : "UPLOAD_FAILED",
+            message:
+              xhr.status === 413
+                ? "File too large for proxy/body limit"
+                : text.startsWith("<") || !text
+                  ? `Upload failed (HTTP ${xhr.status})`
+                  : text,
+          },
+        };
+      }
       resolve({
         ok: xhr.status >= 200 && xhr.status < 300,
         status: xhr.status,
-        json: xhr.response || {},
+        json: json || {},
       });
     };
     xhr.onerror = () => reject(new Error("Network error"));
+    xhr.ontimeout = () => reject(new Error("Upload timed out"));
     xhr.onabort = () => reject(new DOMException("Aborted", "AbortError"));
+    // Large files + Telegram storage can take a long time after 100% sent
+    xhr.timeout = 0;
     if (signal) {
       if (signal.aborted) {
         xhr.abort();

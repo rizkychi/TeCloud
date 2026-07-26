@@ -87,12 +87,19 @@ Register the first user via `/register`, then verify through the Telegram bot.
 
 ### 6) Large uploads (1 GB)
 
+App-side:
+
+- `middleware` **skips** `/api/files` (and zip/unzip) so Next does not clone/buffer the multipart body (default clone limit is **10MB** and truncates large uploads).
+- `experimental.proxyClientMaxBodySize: "1024mb"` as a safety net.
+- Route `maxDuration = 900` for long Telegram MTProto puts.
+- Client upload uses XHR progress panel only (no full-screen blocking overlay).
+
 On the Coolify / Traefik / nginx edge:
 
 - body size ≥ `1024m`
-- long `proxy_read_timeout` / `proxy_send_timeout` (multi-minute uploads)
+- long `proxy_read_timeout` / `proxy_send_timeout` (multi-minute uploads; Telegram storage needs extra time **after** the browser reaches ~100%)
 
-The app streams uploads and enforces `MAX_UPLOAD_BYTES`.
+The app streams to storage and enforces `MAX_UPLOAD_BYTES`.
 
 ### Cookie / HTTPS
 
