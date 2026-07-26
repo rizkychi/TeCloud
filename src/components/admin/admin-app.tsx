@@ -418,7 +418,7 @@ export function AdminApp({
                     label={dict.defaultQuota}
                     value={
                       stats.totals.defaultQuotaUnlimited || stats.totals.defaultQuotaBytes === 0
-                        ? dict.quotaUnlimited
+                        ? "∞"
                         : formatBytes(stats.totals.defaultQuotaBytes)
                     }
                     sub={`${stats.totals.starredFiles} ★ files`}
@@ -611,31 +611,49 @@ export function AdminApp({
                             </span>
                           </td>
                           <td className="px-4 py-3 w-48">
-                            <div className="mb-1 text-xs text-[var(--muted)]">
-                              {u.quotaUnlimited || u.quotaMode === "unlimited" || u.effectiveQuotaBytes === 0
-                                ? `${formatBytes(u.usedBytes)} / ${dict.quotaUnlimited}`
-                                : `${formatBytes(u.usedBytes)} / ${formatBytes(u.effectiveQuotaBytes)}`}
-                              {u.quotaMode === "default" || u.quotaGb == null
-                                ? ` (${dict.useDefaultQuota})`
-                                : u.quotaMode === "unlimited" || u.quotaUnlimited
-                                  ? ` (${dict.quotaUnlimited})`
-                                  : ""}
-                            </div>
-                            <div className="quota-bar">
-                              <span
-                                style={{
-                                  width:
-                                    u.quotaUnlimited || u.quotaMode === "unlimited" || u.effectiveQuotaBytes === 0
-                                      ? `${Math.min(8, u.usedBytes > 0 ? 8 : 0)}%`
-                                      : `${Math.min(
-                                          100,
-                                          u.effectiveQuotaBytes
-                                            ? (u.usedBytes / u.effectiveQuotaBytes) * 100
-                                            : 0,
-                                        )}%`,
-                                }}
-                              />
-                            </div>
+                            {(() => {
+                              const unlimited =
+                                u.quotaUnlimited ||
+                                u.quotaMode === "unlimited" ||
+                                u.effectiveQuotaBytes === 0;
+                              const inheritDefault = u.quotaMode === "default" || u.quotaGb == null;
+                              return (
+                                <>
+                                  <div
+                                    className={`text-xs text-[var(--muted)] ${unlimited ? "" : "mb-1"}`}
+                                  >
+                                    {unlimited ? (
+                                      <>
+                                        {formatBytes(u.usedBytes)} /{" "}
+                                        <span className="text-base leading-none text-[var(--text)]">∞</span>
+                                        {inheritDefault
+                                          ? ` (${dict.useDefaultQuota})`
+                                          : ` (${dict.quotaUnlimited})`}
+                                      </>
+                                    ) : (
+                                      <>
+                                        {formatBytes(u.usedBytes)} / {formatBytes(u.effectiveQuotaBytes)}
+                                        {inheritDefault ? ` (${dict.useDefaultQuota})` : ""}
+                                      </>
+                                    )}
+                                  </div>
+                                  {!unlimited && (
+                                    <div className="quota-bar">
+                                      <span
+                                        style={{
+                                          width: `${Math.min(
+                                            100,
+                                            u.effectiveQuotaBytes
+                                              ? (u.usedBytes / u.effectiveQuotaBytes) * 100
+                                              : 0,
+                                          )}%`,
+                                        }}
+                                      />
+                                    </div>
+                                  )}
+                                </>
+                              );
+                            })()}
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-1.5">

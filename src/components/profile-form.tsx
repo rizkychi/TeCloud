@@ -9,6 +9,8 @@ import { Select } from "./ui/select";
 import { Spinner } from "./ui/loading";
 import { ToastHost, pushToast } from "./ui/toast";
 import { ThemeProvider } from "./theme-provider";
+import { formatBytes } from "@/lib/format";
+import { isUnlimitedQuota } from "@/lib/quota";
 import type { Dictionary } from "@/lib/i18n/dictionaries";
 import type { SessionUser } from "@/lib/auth";
 
@@ -132,10 +134,20 @@ export function ProfileForm({
                 </div>
                 <div className="mt-1 text-[var(--muted)]">
                   {dict.role}: {user.role} ·{" "}
-                  {user.usedBytes
-                    ? Math.round((user.usedBytes / Math.max(user.quotaBytes, 1)) * 100)
-                    : 0}
-                  % quota
+                  {isUnlimitedQuota(user.quotaBytes) ? (
+                    <>
+                      {formatBytes(user.usedBytes || 0)} /{" "}
+                      <span className="text-base leading-none text-[var(--text-2)]">∞</span>{" "}
+                      {dict.quota}
+                    </>
+                  ) : (
+                    <>
+                      {formatBytes(user.usedBytes || 0)} / {formatBytes(user.quotaBytes || 0)}
+                      {user.quotaBytes > 0
+                        ? ` (${Math.min(100, Math.round(((user.usedBytes || 0) / user.quotaBytes) * 100))}%)`
+                        : ""}
+                    </>
+                  )}
                 </div>
               </div>
 

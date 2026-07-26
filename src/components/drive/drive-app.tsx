@@ -1033,20 +1033,24 @@ export function DriveApp({
         {mobileNav && (
           <div className="fixed inset-0 z-40 bg-black/50 md:hidden" onClick={() => setMobileNav(false)} />
         )}
-        <aside className={`fixed inset-y-0 left-0 z-50 w-72 border-r tc-border bg-[var(--panel)] p-4 transition-transform md:static md:z-auto md:flex md:w-64 md:translate-x-0 md:flex-col ${
-          mobileNav ? "translate-x-0" : "-translate-x-full md:translate-x-0"
-        } hidden md:flex ${mobileNav ? "!flex" : ""}`}>
-          <div className="mb-8 flex items-center gap-2 px-2">
+        <aside
+          className={cn(
+            "fixed inset-y-0 left-0 z-50 flex w-72 flex-col border-r tc-border bg-[var(--panel)] p-4 transition-transform",
+            "md:static md:z-auto md:w-64 md:translate-x-0",
+            mobileNav ? "translate-x-0" : "pointer-events-none -translate-x-full md:pointer-events-auto md:translate-x-0",
+          )}
+        >
+          <div className="mb-6 flex shrink-0 items-center gap-2 px-2">
             <BrandLogo size={36} />
-            <div>
-              <div className="text-sm font-medium tracking-tight">{dict.appName}</div>
+            <div className="min-w-0">
+              <div className="truncate text-sm font-medium tracking-tight">{dict.appName}</div>
               <div className="text-[10px] text-[var(--faint)]">
                 {storageDriver === "telegram" ? dict.storageTelegram : dict.storageMock}
               </div>
             </div>
           </div>
 
-          <nav className="space-y-1">
+          <nav className="min-h-0 shrink-0 space-y-1">
             <SideBtn
               active={nav === "drive"}
               onClick={() => {
@@ -1095,56 +1099,61 @@ export function DriveApp({
             )}
           </nav>
 
-          <div className="mt-6 rounded-xl border tc-border p-3">
-            <div
-              className={cn(
-                "flex items-center justify-between gap-2 text-xs text-[var(--muted)]",
-                !quotaUnlimited && "mb-2",
-              )}
-            >
-              <span className="shrink-0">{dict.quota}</span>
-              <span
-                className="min-w-0 truncate tabular-nums text-right"
-                title={
-                  quotaUnlimited
-                    ? `${formatBytes(quota.used)} / ∞`
-                    : `${formatBytes(quota.used)} / ${formatBytes(quota.total)}`
-                }
-              >
-                {quotaUnlimited ? (
-                  <>
-                    {formatBytes(quota.used)} / <span className="text-base leading-none">∞</span>
-                  </>
-                ) : (
-                  `${formatBytes(quota.used)} / ${formatBytes(quota.total)}`
+          <div className="mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto">
+            <div className="rounded-xl border tc-border p-3">
+              <div
+                className={cn(
+                  "flex items-center justify-between gap-2 text-xs text-[var(--muted)]",
+                  !quotaUnlimited && "mb-2",
                 )}
-              </span>
-            </div>
-            {!quotaUnlimited && (
-              <div className="quota-bar">
-                <span style={{ width: `${quotaPct}%` }} />
+              >
+                <span className="shrink-0">{dict.quota}</span>
+                <span
+                  className="min-w-0 truncate tabular-nums text-right"
+                  title={
+                    quotaUnlimited
+                      ? `${formatBytes(quota.used)} / ∞`
+                      : `${formatBytes(quota.used)} / ${formatBytes(quota.total)}`
+                  }
+                >
+                  {quotaUnlimited ? (
+                    <>
+                      {formatBytes(quota.used)} / <span className="text-base leading-none">∞</span>
+                    </>
+                  ) : (
+                    `${formatBytes(quota.used)} / ${formatBytes(quota.total)}`
+                  )}
+                </span>
               </div>
-            )}
-          </div>
-
-          <div className="mt-4 space-y-2 rounded-xl border tc-border p-3">
-            <div className="flex items-center gap-2 text-xs text-[var(--muted)]">
-              <Palette className="h-3.5 w-3.5" /> {dict.theme}
+              {!quotaUnlimited && (
+                <div className="quota-bar">
+                  <span style={{ width: `${quotaPct}%` }} />
+                </div>
+              )}
             </div>
-            <Select
-              value={theme}
-              options={allowedThemes.map((id) => ({ value: id, label: themeLabel(id) }))}
-              onChange={async (next) => {
-                setTheme(next);
-                await savePrefs({ theme: next });
-              }}
-            />
+
+            <div className="space-y-2 rounded-xl border tc-border p-3">
+              <div className="flex items-center gap-2 text-xs text-[var(--muted)]">
+                <Palette className="h-3.5 w-3.5" /> {dict.theme}
+              </div>
+              <Select
+                value={theme}
+                options={allowedThemes.map((id) => ({ value: id, label: themeLabel(id) }))}
+                onChange={async (next) => {
+                  setTheme(next);
+                  await savePrefs({ theme: next });
+                }}
+              />
+            </div>
           </div>
 
-          <div className="mt-auto space-y-3 border-t tc-border pt-4">
+          <div className="mt-4 shrink-0 space-y-3 border-t tc-border pt-4">
             <button
               type="button"
-              onClick={() => router.push("/profile")}
+              onClick={() => {
+                setMobileNav(false);
+                router.push("/profile");
+              }}
               className="flex w-full items-center gap-2 rounded-xl border tc-border px-2 py-2 text-left text-xs tc-hover"
               title={dict.profile}
             >

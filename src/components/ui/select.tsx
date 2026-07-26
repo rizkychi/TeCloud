@@ -8,7 +8,10 @@ import { cn } from "@/lib/cn";
 export type SelectOption = { value: string; label: string };
 
 type MenuPos = {
-  top: number;
+  /** Used when menu opens downward */
+  top?: number;
+  /** Used when menu opens upward — anchors bottom edge to the trigger */
+  bottom?: number;
   left: number;
   width: number;
   maxHeight: number;
@@ -55,17 +58,23 @@ export function Select({
     const openUp = spaceBelow < estimatedH && spaceAbove > spaceBelow;
     const available = Math.max(96, openUp ? spaceAbove : spaceBelow);
     const maxHeight = Math.min(preferredMax, available);
-    // Anchor menu so it stays fully inside the viewport
-    let top = openUp ? rect.top - gap - maxHeight : rect.bottom + gap;
-    if (top < edge) top = edge;
-    if (top + maxHeight > window.innerHeight - edge) {
-      top = Math.max(edge, window.innerHeight - edge - maxHeight);
-    }
     const width = Math.max(rect.width, size === "sm" ? 144 : rect.width);
     let left = rect.left;
     if (left + width > window.innerWidth - edge) left = Math.max(edge, window.innerWidth - edge - width);
     if (left < edge) left = edge;
-    setPos({ top, left, width, maxHeight, openUp });
+
+    // Open-up: pin bottom edge to trigger top (no gap from using maxHeight as actual height).
+    // Open-down: pin top edge to trigger bottom.
+    if (openUp) {
+      const bottom = Math.max(edge, window.innerHeight - rect.top + gap);
+      setPos({ bottom, left, width, maxHeight, openUp: true });
+    } else {
+      let top = rect.bottom + gap;
+      if (top + Math.min(estimatedH, maxHeight) > window.innerHeight - edge) {
+        top = Math.max(edge, window.innerHeight - edge - maxHeight);
+      }
+      setPos({ top, left, width, maxHeight, openUp: false });
+    }
   }
 
   useLayoutEffect(() => {
@@ -115,7 +124,9 @@ export function Select({
           "fixed z-[200] overflow-auto rounded-xl border tc-border bg-[var(--surface)] p-1 shadow-[var(--shadow)]",
         )}
         style={{
-          top: pos.top,
+          ...(pos.openUp
+            ? { bottom: pos.bottom, top: "auto" as const }
+            : { top: pos.top, bottom: "auto" as const }),
           left: pos.left,
           width: pos.width,
           maxHeight: pos.maxHeight,
