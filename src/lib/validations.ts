@@ -61,7 +61,11 @@ export const fileUpdateSchema = z.object({
 
 export const shareSchema = z.object({
   visibility: z.enum(["private", "public", "password"]),
-  password: z.string().min(4).max(128).optional(),
+  password: z
+    .string()
+    .min(4, "Share password must be at least 4 characters")
+    .max(128)
+    .optional(),
 });
 
 export const unlockSchema = z.object({

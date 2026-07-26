@@ -279,7 +279,7 @@ export default async function HomePage() {
         </section>
 
         <footer className="mt-16 border-t border-white/10 pt-6 text-center text-xs text-slate-500">
-          {dict.landingFooterNote}
+          {dict.landingFooterNote.replace("{year}", String(new Date().getFullYear()))}
         </footer>
       </main>
     </div>

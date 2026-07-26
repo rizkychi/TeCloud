@@ -507,6 +507,10 @@ export function DriveApp({
 
   async function saveShare() {
     if (!shareTarget) return;
+    if (shareVisibility === "password" && sharePassword && sharePassword.length < 4) {
+      pushToast("error", dict.sharePasswordTooShort);
+      return;
+    }
     await withBusy(dict.saving, async () => {
       const url =
         shareTarget.kind === "file"
@@ -1282,16 +1286,16 @@ export function DriveApp({
           </header>
 
           <div className="flex flex-wrap items-center gap-1.5 border-b tc-border bg-[var(--panel)] px-3 py-1.5">
-            <div className="relative min-w-[160px] max-w-md flex-1">
+            <div className="relative min-w-[12rem] flex-1 basis-[min(100%,18rem)]">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--faint)]" />
               <Input
-                className="h-8 pl-8 text-xs"
+                className="h-8 w-full pl-8 text-xs"
                 placeholder={dict.searchPlaceholder}
                 value={queryDraft}
                 onChange={(e) => setQueryDraft(e.target.value)}
               />
             </div>
-            <div className="flex flex-wrap items-center gap-1.5">
+            <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5">
               <div className="w-[7.25rem]">
                 <Select
                   size="sm"
@@ -1352,33 +1356,6 @@ export function DriveApp({
               >
                 <Trash2 className="h-4 w-4" />
                 {dict.emptyTrashAction}
-              </Button>
-            </div>
-          )}
-
-          {selected.size > 0 && nav !== "trash" && (
-            <div className="flex flex-wrap items-center gap-2 border-b tc-border bg-[var(--surface-2)] px-4 py-2 text-sm">
-              <span className="text-[var(--muted)]">
-                {selected.size} {dict.selected}
-              </span>
-              <div className="w-48">
-                <Select
-                  value={bulkAction}
-                  options={[
-                    ...(nav === "drive" ? [{ value: "zip", label: dict.zip }] : []),
-                    { value: "star", label: dict.bulkStar },
-                    { value: "unstar", label: dict.bulkUnstar },
-                    ...(nav === "drive" ? [{ value: "move", label: dict.multiMove }] : []),
-                    ...(nav === "drive" ? [{ value: "delete", label: dict.delete }] : []),
-                  ]}
-                  onChange={(v) => setBulkAction(v as typeof bulkAction)}
-                />
-              </div>
-              <Button size="sm" variant="primary" disabled={!!busy} onClick={applyBulkAction}>
-                {dict.applyAction}
-              </Button>
-              <Button size="sm" variant="subtle" onClick={() => setSelected(new Set())}>
-                {dict.clearSelectionBtn}
               </Button>
             </div>
           )}
@@ -1914,6 +1891,44 @@ export function DriveApp({
             }}
           />
         )}
+
+        {selected.size > 0 && nav !== "trash" && (
+          <div className="pointer-events-none fixed inset-x-0 bottom-4 z-40 flex justify-center px-3 md:bottom-6">
+            <div className="pointer-events-auto flex max-w-[min(100%,42rem)] flex-wrap items-center gap-1.5 rounded-2xl border tc-border bg-[var(--panel)]/95 px-2.5 py-1.5 text-xs shadow-2xl shadow-black/30 backdrop-blur-md sm:gap-2 sm:px-3">
+              <span className="whitespace-nowrap rounded-full bg-[var(--surface-2)] px-2 py-1 font-medium tabular-nums text-[var(--text)]">
+                {selected.size} {dict.selected}
+              </span>
+              <div className="w-[9.5rem] sm:w-44">
+                <Select
+                  size="sm"
+                  value={bulkAction}
+                  options={[
+                    ...(nav === "drive" ? [{ value: "zip", label: dict.zip }] : []),
+                    { value: "star", label: dict.bulkStar },
+                    { value: "unstar", label: dict.bulkUnstar },
+                    ...(nav === "drive" ? [{ value: "move", label: dict.multiMove }] : []),
+                    ...(nav === "drive" ? [{ value: "delete", label: dict.delete }] : []),
+                  ]}
+                  onChange={(v) => setBulkAction(v as typeof bulkAction)}
+                />
+              </div>
+              <Button size="sm" variant="primary" className="h-8 px-2.5" disabled={!!busy} onClick={applyBulkAction}>
+                {dict.applyAction}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-8 px-2"
+                onClick={() => setSelected(new Set())}
+                title={dict.clearSelectionBtn}
+                aria-label={dict.clearSelectionBtn}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        )}
+
         <UploadProgressPanel
           dict={dict}
           jobs={uploadJobs}

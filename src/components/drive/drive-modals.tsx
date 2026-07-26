@@ -156,12 +156,20 @@ export function ShareModal({
           onChange={(v) => onVisibility(v as "private" | "public" | "password")}
         />
         {visibility === "password" && (
-          <Input
-            type="password"
-            placeholder={dict.setPassword}
-            value={password}
-            onChange={(e) => onPassword(e.target.value)}
-          />
+          <div className="space-y-1.5">
+            <Input
+              type="password"
+              placeholder={dict.setPassword}
+              value={password}
+              minLength={4}
+              maxLength={128}
+              onChange={(e) => onPassword(e.target.value)}
+            />
+            <p className="text-[11px] leading-relaxed text-[var(--faint)]">{dict.sharePasswordHint}</p>
+            {password.length > 0 && password.length < 4 && (
+              <p className="text-[11px] text-amber-300">{dict.sharePasswordTooShort}</p>
+            )}
+          </div>
         )}
         {shareUrl && (
           <div className="break-all rounded-lg border tc-border bg-[var(--surface-2)] p-2 text-xs text-[var(--text-2)]">

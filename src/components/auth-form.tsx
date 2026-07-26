@@ -239,7 +239,6 @@ export function AuthForm({
             maxLength={32}
             pattern="[A-Za-z0-9_]+"
             autoComplete="username"
-            placeholder="nama_kamu"
           />
           {/* Username format tip only on register/forgot — keep login clean */}
           {mode !== "login" && (

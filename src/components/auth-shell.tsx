@@ -42,7 +42,9 @@ export function AuthShell({
               <li>• {dict.featureAdmin}</li>
             </ul>
           </div>
-          <p className="text-xs text-slate-500">{dict.landingFooterNote}</p>
+          <p className="text-xs text-slate-500">
+            {dict.landingFooterNote.replace("{year}", String(new Date().getFullYear()))}
+          </p>
         </div>
 
         <div className="flex items-center justify-center p-6 sm:p-10">
