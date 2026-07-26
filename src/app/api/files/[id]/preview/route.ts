@@ -33,7 +33,8 @@ export async function GET(_req: Request, ctx: Ctx) {
       return jsonError(415, "NOT_PREVIEWABLE", "Preview not supported for this type");
     }
 
-    const codeLike = isCodeLike(mime, file.name) && !isImageMime(mime) && mime !== "application/pdf";
+    const isPdf = mime === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+    const codeLike = isCodeLike(mime, file.name) && !isImageMime(mime) && !isPdf;
     // limit huge text/code previews
     if (codeLike && Number(file.size) > 2_000_000) {
       return jsonError(413, "TOO_LARGE", "Text preview limited to 2MB");
@@ -48,20 +49,32 @@ export async function GET(_req: Request, ctx: Ctx) {
       ? "text/plain; charset=utf-8"
       : isImageMime(mime)
         ? mime
-        : mime === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")
+        : isPdf
           ? "application/pdf"
           : mime;
 
-    return new Response(webStream, {
-      headers: {
-        "Content-Type": responseMime,
-        "Content-Length": file.size.toString(),
-        "Content-Disposition": `inline; filename*=UTF-8''${encodeURIComponent(file.name)}`,
-        "X-Content-Type-Options": "nosniff",
-        "Content-Security-Policy": "default-src 'none'; sandbox",
-        "Cache-Control": "private, max-age=60",
-      },
-    });
+    const headers: Record<string, string> = {
+      "Content-Type": responseMime,
+      "Content-Length": file.size.toString(),
+      "Content-Disposition": `inline; filename*=UTF-8''${encodeURIComponent(file.name)}`,
+      "X-Content-Type-Options": "nosniff",
+      "Cache-Control": "private, max-age=60",
+    };
+
+    if (codeLike) {
+      // Lock down code/text previews only — never apply sandbox CSP to PDFs
+      // (Chrome's built-in PDF viewer is blocked by default-src 'none' / sandbox).
+      headers["Content-Security-Policy"] = "default-src 'none'; sandbox";
+    } else if (isPdf) {
+      // Allow same-origin framing so modal iframe can embed Chrome PDF viewer.
+      headers["Content-Security-Policy"] =
+        "default-src 'none'; object-src 'self'; frame-ancestors 'self'; base-uri 'none'; form-action 'none'";
+    } else if (isImageMime(mime)) {
+      headers["Content-Security-Policy"] =
+        "default-src 'none'; img-src 'self' data: blob:; frame-ancestors 'self'";
+    }
+
+    return new Response(webStream, { headers });
   } catch (e) {
     if (e instanceof Error && e.message === "UNAUTHORIZED") {
       return jsonError(401, "UNAUTHORIZED", "Please sign in");

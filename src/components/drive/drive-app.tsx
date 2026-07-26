@@ -44,6 +44,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { BrandLogo } from "@/components/brand-logo";
 import type { Dictionary } from "@/lib/i18n/dictionaries";
 import { formatBytes, isImageMime, isPreviewable, isZip } from "@/lib/format";
+import { cn } from "@/lib/cn";
 import type { SessionUser } from "@/lib/auth";
 import { THEME_PRESETS } from "@/lib/units";
 import {
@@ -860,9 +861,19 @@ export function DriveApp({
   function onContextMenu(e: React.MouseEvent, item: FolderItem | FileItem) {
     e.preventDefault();
     e.stopPropagation();
+    const menuW = 240;
+    const menuH = 420; // upper bound; clamped + max-height scroll if needed
+    const pad = 8;
+    const x = Math.max(pad, Math.min(e.clientX, window.innerWidth - menuW - pad));
+    // Prefer open upward near bottom of viewport so full menu stays visible
+    let y = e.clientY;
+    if (y + menuH > window.innerHeight - pad) {
+      y = Math.max(pad, window.innerHeight - menuH - pad);
+    }
+    if (y < pad) y = pad;
     setMenu({
-      x: Math.min(e.clientX, window.innerWidth - 240),
-      y: Math.min(e.clientY, window.innerHeight - 360),
+      x,
+      y,
       kind: item.type,
       id: item.id,
       name: item.name,
@@ -1085,17 +1096,35 @@ export function DriveApp({
           </nav>
 
           <div className="mt-6 rounded-xl border tc-border p-3">
-            <div className="mb-2 flex items-center justify-between text-xs text-[var(--muted)]">
-              <span>{dict.quota}</span>
-              <span>
-                {quotaUnlimited
-                  ? `${formatBytes(quota.used)} / ${dict.quotaUnlimited}`
-                  : `${formatBytes(quota.used)} / ${formatBytes(quota.total)}`}
+            <div
+              className={cn(
+                "flex items-center justify-between gap-2 text-xs text-[var(--muted)]",
+                !quotaUnlimited && "mb-2",
+              )}
+            >
+              <span className="shrink-0">{dict.quota}</span>
+              <span
+                className="min-w-0 truncate tabular-nums text-right"
+                title={
+                  quotaUnlimited
+                    ? `${formatBytes(quota.used)} / ∞`
+                    : `${formatBytes(quota.used)} / ${formatBytes(quota.total)}`
+                }
+              >
+                {quotaUnlimited ? (
+                  <>
+                    {formatBytes(quota.used)} / <span className="text-base leading-none">∞</span>
+                  </>
+                ) : (
+                  `${formatBytes(quota.used)} / ${formatBytes(quota.total)}`
+                )}
               </span>
             </div>
-            <div className="quota-bar">
-              <span style={{ width: `${quotaPct}%` }} />
-            </div>
+            {!quotaUnlimited && (
+              <div className="quota-bar">
+                <span style={{ width: `${quotaPct}%` }} />
+              </div>
+            )}
           </div>
 
           <div className="mt-4 space-y-2 rounded-xl border tc-border p-3">
@@ -1619,7 +1648,11 @@ export function DriveApp({
         {menu && (
           <div
             className="context-menu"
-            style={{ left: menu.x, top: menu.y }}
+            style={{
+              left: menu.x,
+              top: menu.y,
+              maxHeight: `calc(100vh - ${menu.y + 8}px)`,
+            }}
             onClick={(e) => e.stopPropagation()}
           >
             {nav === "trash" ? (

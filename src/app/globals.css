@@ -308,11 +308,15 @@ input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
   position: fixed;
   z-index: 80;
   min-width: 220px;
+  max-width: min(280px, calc(100vw - 16px));
   padding: 6px;
   border-radius: 12px;
   border: 1px solid var(--border);
   background: var(--surface);
   box-shadow: var(--shadow);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .context-menu button {
   width: 100%;

@@ -296,9 +296,9 @@ export function PreviewModal({
         ) : isPdf ? (
           <iframe
             title={name}
-            src={`/api/files/${id}/preview`}
+            src={`/api/files/${id}/preview#toolbar=1&navpanes=0`}
             className="h-[65vh] w-full rounded-md bg-white"
-            sandbox=""
+            // Do not use empty sandbox — Chrome blocks built-in PDF viewer.
           />
         ) : codeLike ? (
           <div className="code-preview">
