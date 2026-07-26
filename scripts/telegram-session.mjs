@@ -14,7 +14,7 @@
  */
 import { createInterface } from "readline";
 import { TelegramClient } from "telegram";
-import { StringSession } from "telegram/sessions";
+import { StringSession } from "telegram/sessions/index.js";
 
 const apiId = Number(process.env.TELEGRAM_API_ID || "");
 const apiHash = process.env.TELEGRAM_API_HASH || "";
