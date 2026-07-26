@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { Cloud } from "lucide-react";
 import { LocaleSwitcher } from "./locale-switcher";
+import { BrandLogo } from "./brand-logo";
 import type { Dictionary } from "@/lib/i18n/dictionaries";
 import type { Locale } from "@/lib/i18n/dictionaries";
 
@@ -29,9 +29,7 @@ export function AuthShell({
       <div className="mx-auto grid min-h-screen max-w-6xl lg:grid-cols-2">
         <div className="hidden flex-col justify-between p-10 lg:flex">
           <Link href="/" className="inline-flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-sky-400">
-              <Cloud className="h-4 w-4" />
-            </div>
+            <BrandLogo size={36} />
             <span className="text-sm font-semibold">{dict.appName}</span>
           </Link>
           <div>
@@ -51,9 +49,7 @@ export function AuthShell({
           <div className="w-full max-w-md">
             <div className="mb-6 flex items-center justify-between lg:hidden">
               <Link href="/" className="inline-flex items-center gap-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-500">
-                  <Cloud className="h-3.5 w-3.5" />
-                </div>
+                <BrandLogo size={32} rounded="lg" />
                 <span className="text-sm font-medium">{dict.appName}</span>
               </Link>
               <LocaleSwitcher locale={locale} />

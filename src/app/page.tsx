@@ -1,6 +1,5 @@
 import Link from "next/link";
 import {
-  Cloud,
   FolderTree,
   KeyRound,
   Layers3,
@@ -14,6 +13,7 @@ import {
 import { getLocale } from "@/lib/i18n/locale";
 import { getDictionary } from "@/lib/i18n/dictionaries";
 import { LocaleSwitcher } from "@/components/locale-switcher";
+import { BrandLogo } from "@/components/brand-logo";
 import { getCurrentUser } from "@/lib/auth";
 
 export default async function HomePage() {
@@ -54,9 +54,7 @@ export default async function HomePage() {
 
       <header className="mx-auto flex max-w-6xl items-center justify-between px-6 py-5">
         <div className="flex items-center gap-2.5">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-sky-400 shadow-lg shadow-indigo-500/30">
-            <Cloud className="h-4 w-4 text-white" />
-          </div>
+          <BrandLogo size={36} className="shadow-lg shadow-indigo-500/30" />
           <div>
             <div className="text-sm font-semibold tracking-tight text-white">{dict.appName}</div>
             <div className="text-[10px] text-slate-400">Drive-like personal cloud</div>
@@ -159,7 +157,8 @@ export default async function HomePage() {
                   <div className="h-2.5 w-2.5 rounded-full bg-rose-400" />
                   <div className="h-2.5 w-2.5 rounded-full bg-amber-400" />
                   <div className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
-                  <span className="ml-2 font-semibold text-slate-800">{dict.appName} Drive</span>
+                  <BrandLogo size={16} rounded="lg" className="ml-1.5" />
+                  <span className="font-semibold text-slate-800">{dict.appName} Drive</span>
                 </div>
                 <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-semibold text-indigo-700">
                   live UI

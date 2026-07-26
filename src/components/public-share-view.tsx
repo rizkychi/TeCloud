@@ -5,6 +5,7 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import type { Dictionary } from "@/lib/i18n/dictionaries";
 import { LocaleSwitcher } from "./locale-switcher";
+import { BrandLogo } from "./brand-logo";
 
 export function PublicShareView({
   token,
@@ -73,7 +74,10 @@ export function PublicShareView({
   return (
     <div className="min-h-screen bg-[#08090a] text-[#f7f8f8]">
       <header className="flex items-center justify-between border-b border-[rgba(255,255,255,0.05)] px-4 py-3">
-        <div className="text-sm font-medium text-[#3ecf8e]">{dict.appName}</div>
+        <div className="flex items-center gap-2">
+          <BrandLogo size={24} rounded="lg" />
+          <div className="text-sm font-medium text-[#3ecf8e]">{dict.appName}</div>
+        </div>
         <LocaleSwitcher locale={locale} />
       </header>
       <main className="mx-auto max-w-2xl p-6">

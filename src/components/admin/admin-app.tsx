@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
-  Cloud,
   HardDrive,
   LogOut,
   Shield,
@@ -27,6 +26,7 @@ import { LoadingOverlay, Spinner } from "@/components/ui/loading";
 import { ToastHost, pushToast } from "@/components/ui/toast";
 import { ConfirmModal } from "@/components/ui/confirm-modal";
 import { ThemeProvider } from "@/components/theme-provider";
+import { BrandLogo } from "@/components/brand-logo";
 import type { Dictionary } from "@/lib/i18n/dictionaries";
 import type { SessionUser } from "@/lib/auth";
 import { formatBytes } from "@/lib/format";
@@ -283,9 +283,7 @@ export function AdminApp({
       <div className="flex min-h-screen bg-[var(--bg)] text-[var(--text)]">
         <aside className="hidden w-64 shrink-0 border-r tc-border bg-[var(--panel)] p-4 md:flex md:flex-col">
           <div className="mb-8 flex items-center gap-2 px-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[color-mix(in_srgb,var(--brand)_20%,transparent)] text-[var(--brand-hover)]">
-              <Shield className="h-4 w-4" />
-            </div>
+            <BrandLogo size={36} />
             <div>
               <div className="text-sm font-medium">{dict.admin}</div>
               <div className="text-[10px] text-[var(--faint)]">{dict.appName}</div>
@@ -334,7 +332,7 @@ export function AdminApp({
         <main className="flex min-w-0 flex-1 flex-col">
           <header className="flex items-center justify-between border-b tc-border bg-[var(--panel)] px-4 py-3">
             <div className="flex items-center gap-2 text-sm">
-              <Cloud className="h-4 w-4 text-[var(--accent)]" />
+              <BrandLogo size={20} rounded="lg" />
               <span className="font-medium">{dict.admin}</span>
               <span className="text-[var(--faint)]">· {user.username}</span>
             </div>

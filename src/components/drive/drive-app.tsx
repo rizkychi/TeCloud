@@ -7,7 +7,6 @@ import {
   ArrowLeft,
   CheckSquare,
   Clock3,
-  Cloud,
   Download,
   Eye,
   File as FileIcon,
@@ -42,6 +41,7 @@ import { LoadingOverlay, Spinner } from "@/components/ui/loading";
 import { ToastHost, pushToast } from "@/components/ui/toast";
 import { ConfirmModal } from "@/components/ui/confirm-modal";
 import { ThemeProvider } from "@/components/theme-provider";
+import { BrandLogo } from "@/components/brand-logo";
 import type { Dictionary } from "@/lib/i18n/dictionaries";
 import { formatBytes, isImageMime, isPreviewable, isZip } from "@/lib/format";
 import type { SessionUser } from "@/lib/auth";
@@ -1009,9 +1009,7 @@ export function DriveApp({
           mobileNav ? "translate-x-0" : "-translate-x-full md:translate-x-0"
         } hidden md:flex ${mobileNav ? "!flex" : ""}`}>
           <div className="mb-8 flex items-center gap-2 px-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[color-mix(in_srgb,var(--accent)_18%,transparent)] text-[var(--accent)]">
-              <Cloud className="h-4 w-4" />
-            </div>
+            <BrandLogo size={36} />
             <div>
               <div className="text-sm font-medium tracking-tight">{dict.appName}</div>
               <div className="text-[10px] text-[var(--faint)]">
