@@ -7,8 +7,20 @@ const nextConfig: NextConfig = {
       bodySizeLimit: "1024mb",
     },
   },
-  // GramJS (telegram) is Node-only — keep out of Turbopack client graph
-  serverExternalPackages: ["telegram", "big-integer", "websocket", "bufferutil", "utf-8-validate"],
+  // GramJS must stay external so Session classes keep correct identity
+  serverExternalPackages: [
+    "telegram",
+    "big-integer",
+    "websocket",
+    "bufferutil",
+    "utf-8-validate",
+    "store2",
+    "input",
+    "mime",
+    "pako",
+    "socks",
+    "htmlparser2",
+  ],
 };
 
 export default nextConfig;

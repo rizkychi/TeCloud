@@ -1,11 +1,9 @@
 import { createWriteStream, promises as fs } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { Readable } from "node:stream";
-import { TelegramClient } from "telegram";
-import { StringSession } from "telegram/sessions";
-import { CustomFile } from "telegram/client/uploads";
 import type { StorageDriver } from "./storage";
 
 export type TelegramStorageConfig = {
@@ -30,32 +28,96 @@ type IndexFile = {
   entries: Record<string, IndexEntry>;
 };
 
+type GramJs = {
+  TelegramClient: new (
+    session: unknown,
+    apiId: number,
+    apiHash: string,
+    params?: Record<string, unknown>,
+  ) => {
+    connect: () => Promise<void>;
+    isUserAuthorized: () => Promise<boolean>;
+    connected?: boolean;
+    sendFile: (entity: unknown, opts: Record<string, unknown>) => Promise<unknown>;
+    getMessages: (entity: unknown, opts: Record<string, unknown>) => Promise<unknown[]>;
+    downloadMedia: (msg: unknown, opts: Record<string, unknown>) => Promise<Buffer | string | undefined>;
+    deleteMessages: (
+      entity: unknown,
+      ids: number[],
+      opts?: Record<string, unknown>,
+    ) => Promise<unknown>;
+  };
+  StringSession: new (session?: string) => unknown;
+  CustomFile: new (name: string, size: number, path: string) => unknown;
+};
+
+/**
+ * Load GramJS via Node createRequire so Next/Turbopack does not rewrite the
+ * Session class identity. Static ESM imports can break `instanceof Session`
+ * and throw: "Only StringSession and StoreSessions are supported currently".
+ */
+function loadGramJs(): GramJs {
+  const require = createRequire(join(process.cwd(), "package.json"));
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const telegram = require("telegram") as {
+    TelegramClient: GramJs["TelegramClient"];
+  };
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const sessions = require("telegram/sessions") as {
+    StringSession: GramJs["StringSession"];
+  };
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const uploads = require("telegram/client/uploads") as {
+    CustomFile: GramJs["CustomFile"];
+  };
+  return {
+    TelegramClient: telegram.TelegramClient,
+    StringSession: sessions.StringSession,
+    CustomFile: uploads.CustomFile,
+  };
+}
+
 function safeKey(key: string) {
   return key.replace(/\\/g, "/").replace(/\.\./g, "");
 }
 
-async function streamToBuffer(stream: Readable): Promise<Buffer> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of stream) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+/** Normalize Coolify/env paste artifacts */
+function normalizeSession(raw: string) {
+  let s = raw.trim();
+  // strip wrapping quotes
+  if (
+    (s.startsWith('"') && s.endsWith('"')) ||
+    (s.startsWith("'") && s.endsWith("'"))
+  ) {
+    s = s.slice(1, -1).trim();
   }
-  return Buffer.concat(chunks);
+  // accidental TELEGRAM_SESSION= prefix
+  if (s.startsWith("TELEGRAM_SESSION=")) {
+    s = s.slice("TELEGRAM_SESSION=".length).trim();
+  }
+  // collapse whitespace/newlines from multi-line paste
+  s = s.replace(/\s+/g, "");
+  return s;
 }
 
 /**
- * MTProto storage: each logical key maps to a document message in a Telegram chat
- * (usually Saved Messages). Local JSON index stores messageId only — blobs live on Telegram.
- *
- * Limits (Telegram): ~2 GB per document for user accounts; media may take time on cold download.
+ * MTProto storage: each logical key maps to a document message in a Telegram chat.
+ * Local JSON index stores messageId only — blobs live on Telegram.
  */
 export class TelegramStorageDriver implements StorageDriver {
-  private client: TelegramClient | null = null;
-  private connectPromise: Promise<TelegramClient> | null = null;
+  private client: InstanceType<GramJs["TelegramClient"]> | null = null;
+  private connectPromise: Promise<InstanceType<GramJs["TelegramClient"]>> | null = null;
   private indexPath: string;
   private writeChain: Promise<void> = Promise.resolve();
+  private gram: GramJs | null = null;
 
   constructor(private cfg: TelegramStorageConfig) {
     this.indexPath = join(resolve(cfg.indexRoot), ".tg-index.json");
+  }
+
+  private gramJs() {
+    if (!this.gram) this.gram = loadGramJs();
+    return this.gram;
   }
 
   private async loadIndex(): Promise<IndexFile> {
@@ -78,7 +140,6 @@ export class TelegramStorageDriver implements StorageDriver {
     await fs.rename(tmp, this.indexPath);
   }
 
-  /** serialize index mutations */
   private withIndex<T>(fn: (index: IndexFile) => Promise<T>): Promise<T> {
     const run = this.writeChain.then(async () => {
       const index = await this.loadIndex();
@@ -91,20 +152,28 @@ export class TelegramStorageDriver implements StorageDriver {
     return run;
   }
 
-  private async getClient(): Promise<TelegramClient> {
+  private async getClient() {
     if (this.client?.connected) return this.client;
     if (this.connectPromise) return this.connectPromise;
 
     this.connectPromise = (async () => {
-      const client = new TelegramClient(
-        new StringSession(this.cfg.session),
-        this.cfg.apiId,
-        this.cfg.apiHash,
-        {
-          connectionRetries: 5,
-          useWSS: true,
-        },
-      );
+      const { TelegramClient, StringSession } = this.gramJs();
+      const sessionStr = normalizeSession(this.cfg.session);
+      if (!sessionStr) {
+        throw new Error("TELEGRAM_SESSION_EMPTY");
+      }
+      // GramJS StringSession must start with version char "1"
+      if (sessionStr[0] !== "1") {
+        throw new Error(
+          'TELEGRAM_SESSION_INVALID: must be a GramJS StringSession from `npm run telegram:session` (starts with "1")',
+        );
+      }
+
+      const session = new StringSession(sessionStr);
+      const client = new TelegramClient(session, this.cfg.apiId, this.cfg.apiHash, {
+        connectionRetries: 5,
+        useWSS: true,
+      });
       await client.connect();
       if (!(await client.isUserAuthorized())) {
         throw new Error(
@@ -127,18 +196,16 @@ export class TelegramStorageDriver implements StorageDriver {
   private entity() {
     const id = this.cfg.chatId.trim();
     if (!id || id === "me" || id === "self") return "me";
-    // numeric string peer
     if (/^-?\d+$/.test(id)) return id;
-    // @username
     return id.replace(/^@/, "");
   }
 
   async put(key: string, stream: Readable, size: number): Promise<void> {
     const k = safeKey(key);
     const client = await this.getClient();
+    const { CustomFile } = this.gramJs();
     const baseName = basename(k) || "file.bin";
 
-    // Prefer temp file so large uploads don't hold full RAM twice
     const tmpDir = await fs.mkdtemp(join(tmpdir(), "tecloud-tg-"));
     const tmpFile = join(tmpDir, baseName);
     try {
@@ -169,7 +236,6 @@ export class TelegramStorageDriver implements StorageDriver {
           updatedAt: new Date().toISOString(),
         };
         await this.saveIndex(index);
-        // best-effort delete previous message for same key
         if (prev?.messageId && prev.messageId !== messageId) {
           try {
             await client.deleteMessages(this.entity(), [prev.messageId], { revoke: true });
@@ -235,9 +301,4 @@ export class TelegramStorageDriver implements StorageDriver {
       };
     }
   }
-}
-
-/** Read full stream into CustomFile buffer path helper (tests) */
-export async function bufferFromStream(stream: Readable) {
-  return streamToBuffer(stream);
 }

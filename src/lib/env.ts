@@ -23,10 +23,15 @@ const schema = z.object({
   // MTProto storage (user account)
   TELEGRAM_API_ID: z.preprocess(emptyToUndef, z.coerce.number().int().positive().optional()),
   TELEGRAM_API_HASH: z.preprocess(emptyToUndef, z.string().min(8).optional()),
-  TELEGRAM_SESSION: z.preprocess(emptyToUndef, z.string().min(10).optional()),
+  // Session strings are long base64; allow up to 8k after whitespace strip
+  TELEGRAM_SESSION: z.preprocess((v) => {
+    const u = emptyToUndef(v);
+    if (typeof u !== "string") return u;
+    return u.replace(/\s+/g, "").replace(/^["']|["']$/g, "");
+  }, z.string().min(20).max(8192).optional()),
   TELEGRAM_STORAGE_CHAT_ID: z.preprocess(
     emptyToUndef,
-    z.string().min(1).max(64).default("me"),
+    z.string().min(1).max(128).default("me"),
   ),
 });
 
