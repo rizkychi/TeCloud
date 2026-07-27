@@ -1,10 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import {
   Archive,
+  ArrowDownAZ,
   ArrowLeft,
+  ArrowUpAZ,
   CheckSquare,
   Clock3,
   Download,
@@ -209,6 +212,9 @@ export function DriveApp({
   const [versionsBusy, setVersionsBusy] = useState(false);
   const [mobileNav, setMobileNav] = useState(false);
   const [crumbOpen, setCrumbOpen] = useState(false);
+  const [crumbMenuPos, setCrumbMenuPos] = useState<{ top: number; left: number } | null>(null);
+  const crumbBtnRef = useRef<HTMLButtonElement>(null);
+  const crumbMenuRef = useRef<HTMLDivElement>(null);
   const [sessionUser] = useState(user);
   const [moveTarget, setMoveTarget] = useState<{ kind: "file" | "folder"; id: string; name: string } | null>(null);
   const [confirmState, setConfirmState] = useState<{
@@ -275,6 +281,51 @@ export function DriveApp({
   useEffect(() => {
     setCrumbOpen(false);
   }, [folderId, nav]);
+
+  useLayoutEffect(() => {
+    if (!crumbOpen) {
+      setCrumbMenuPos(null);
+      return;
+    }
+    function place() {
+      const el = crumbBtnRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const menuW = 220;
+      const edge = 8;
+      let left = rect.left;
+      if (left + menuW > window.innerWidth - edge) {
+        left = Math.max(edge, window.innerWidth - edge - menuW);
+      }
+      setCrumbMenuPos({ top: rect.bottom + 6, left });
+    }
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [crumbOpen]);
+
+  useEffect(() => {
+    if (!crumbOpen) return;
+    function onDoc(e: MouseEvent) {
+      const t = e.target as Node;
+      if (crumbBtnRef.current?.contains(t)) return;
+      if (crumbMenuRef.current?.contains(t)) return;
+      setCrumbOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setCrumbOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [crumbOpen]);
 
   useEffect(() => {
     fetch("/api/preferences")
@@ -1179,167 +1230,225 @@ export function DriveApp({
           onDragOver={onDragOver}
           onDrop={onDrop}
         >
-          <header className="flex flex-wrap items-center gap-2 border-b tc-border bg-[var(--panel)] px-4 py-3">
-            <Button
-              size="sm"
-              variant="subtle"
-              className="md:hidden"
-              onClick={() => setMobileNav(true)}
-              title={dict.menu}
-            >
-              <Menu className="h-4 w-4" />
-            </Button>
-            {canGoBack && (
+          <header className="border-b tc-border bg-[var(--panel)] px-3 py-2 sm:px-4">
+            <div className="flex min-w-0 items-center gap-1.5 sm:gap-2">
               <Button
                 size="icon"
                 variant="subtle"
-                onClick={goBack}
-                title={dict.back}
-                aria-label={dict.back}
+                className="h-8 w-8 shrink-0 md:hidden"
+                onClick={() => setMobileNav(true)}
+                title={dict.menu}
+                aria-label={dict.menu}
               >
-                <ArrowLeft className="h-4 w-4" />
+                <Menu className="h-4 w-4" />
               </Button>
-            )}
+              {canGoBack && (
+                <Button
+                  size="icon"
+                  variant="subtle"
+                  className="h-8 w-8 shrink-0"
+                  onClick={goBack}
+                  title={dict.back}
+                  aria-label={dict.back}
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                </Button>
+              )}
 
-            <div className="flex min-w-0 flex-1 items-center gap-1.5 text-sm text-[var(--muted)]">
-              {nav === "drive" ? (
-                (() => {
-                  const crumbs = data?.breadcrumb || [];
-                  const maxVisible = 2;
-                  const hidden = crumbs.length > maxVisible ? crumbs.slice(0, crumbs.length - maxVisible) : [];
-                  const visible = crumbs.length > maxVisible ? crumbs.slice(-maxVisible) : crumbs;
-                  return (
-                    <>
-                      <button type="button" className="shrink-0 hover:text-[var(--text)]" onClick={() => { setFolderId(null); setCrumbOpen(false); }}>
-                        {dict.breadcrumbRoot}
-                      </button>
-                      {hidden.length > 0 && (
-                        <span className="flex items-center gap-1.5">
-                          <span>/</span>
-                          <span className="tc-breadcrumb-ellipsis">
-                            <button
-                              type="button"
-                              className="rounded-md px-1.5 py-0.5 font-medium hover:bg-[var(--hover)] hover:text-[var(--text)]"
-                              title={dict.showMorePath}
-                              onClick={() => setCrumbOpen((v) => !v)}
-                            >
-                              …
-                            </button>
-                            {crumbOpen && (
-                              <div className="tc-breadcrumb-menu">
-                                {hidden.map((c) => (
-                                  <button
-                                    key={c.id}
-                                    type="button"
-                                    onClick={() => {
-                                      setFolderId(c.id);
-                                      setCrumbOpen(false);
-                                    }}
-                                  >
-                                    {c.name}
-                                  </button>
-                                ))}
-                              </div>
-                            )}
-                          </span>
-                        </span>
-                      )}
-                      {visible.map((c) => (
-                        <span key={c.id} className="flex min-w-0 items-center gap-1.5">
-                          <span>/</span>
+              {/* Own flex slot so actions never cover the folder title on mobile.
+                  overflow-x only — never clip the ellipsis portal menu. */}
+              <div className="min-w-0 flex-1 overflow-x-auto overflow-y-visible">
+                <div className="flex min-w-0 items-center gap-1 text-sm text-[var(--muted)]">
+                  {nav === "drive" ? (
+                    (() => {
+                      const crumbs = data?.breadcrumb || [];
+                      const maxVisible = 2;
+                      const hidden = crumbs.length > maxVisible ? crumbs.slice(0, crumbs.length - maxVisible) : [];
+                      const visible = crumbs.length > maxVisible ? crumbs.slice(-maxVisible) : crumbs;
+                      return (
+                        <>
                           <button
                             type="button"
-                            className="max-w-[140px] truncate hover:text-[var(--text)]"
-                            onClick={() => setFolderId(c.id)}
-                            title={c.name}
+                            className="shrink-0 hover:text-[var(--text)]"
+                            onClick={() => {
+                              setFolderId(null);
+                              setCrumbOpen(false);
+                            }}
                           >
-                            {c.name}
+                            {dict.breadcrumbRoot}
                           </button>
-                        </span>
-                      ))}
-                    </>
-                  );
-                })()
-              ) : (
-                <span className="text-[var(--text)]">
-                  {nav === "trash"
-                    ? dict.trash
-                    : nav === "starred"
-                      ? dict.starred
-                      : nav === "recent"
-                        ? dict.recent
-                        : dict.searchResults}
-                </span>
-              )}
-            </div>
-
-            <div className="w-[8.5rem] shrink-0">
-              <Select
-                size="sm"
-                value={viewMode}
-                options={[
-                  { value: "list", label: dict.viewList },
-                  { value: "grid", label: dict.viewGrid },
-                  { value: "compact", label: dict.viewCompact },
-                ]}
-                onChange={async (v) => {
-                  const mode = v as "list" | "grid" | "compact";
-                  setViewMode(mode);
-                  await savePrefs({ viewMode: mode });
-                }}
-                leading={
-                  viewMode === "grid" ? (
-                    <Grid3X3 className="h-3.5 w-3.5 shrink-0 text-[var(--muted)]" />
-                  ) : viewMode === "compact" ? (
-                    <Rows3 className="h-3.5 w-3.5 shrink-0 text-[var(--muted)]" />
+                          {hidden.length > 0 && (
+                            <span className="flex shrink-0 items-center gap-1">
+                              <span className="text-[var(--faint)]">/</span>
+                              <button
+                                ref={crumbBtnRef}
+                                type="button"
+                                className="rounded-md px-1 py-0.5 font-medium hover:bg-[var(--hover)] hover:text-[var(--text)]"
+                                title={dict.showMorePath}
+                                aria-expanded={crumbOpen}
+                                aria-haspopup="menu"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setCrumbOpen((v) => !v);
+                                }}
+                              >
+                                …
+                              </button>
+                              {crumbOpen &&
+                                crumbMenuPos &&
+                                typeof document !== "undefined" &&
+                                createPortal(
+                                  <div
+                                    ref={crumbMenuRef}
+                                    role="menu"
+                                    className="tc-breadcrumb-menu"
+                                    style={{
+                                      position: "fixed",
+                                      top: crumbMenuPos.top,
+                                      left: crumbMenuPos.left,
+                                      zIndex: 200,
+                                    }}
+                                  >
+                                    {hidden.map((c) => (
+                                      <button
+                                        key={c.id}
+                                        type="button"
+                                        role="menuitem"
+                                        onClick={() => {
+                                          setFolderId(c.id);
+                                          setCrumbOpen(false);
+                                        }}
+                                      >
+                                        {c.name}
+                                      </button>
+                                    ))}
+                                  </div>,
+                                  document.body,
+                                )}
+                            </span>
+                          )}
+                          {visible.map((c, idx) => {
+                            const isLast = idx === visible.length - 1;
+                            return (
+                              <span key={c.id} className="flex min-w-0 items-center gap-1">
+                                <span className="shrink-0 text-[var(--faint)]">/</span>
+                                <button
+                                  type="button"
+                                  className={cn(
+                                    "truncate hover:text-[var(--text)]",
+                                    isLast
+                                      ? "max-w-[10rem] font-medium text-[var(--text)] sm:max-w-[16rem]"
+                                      : "max-w-[5rem] sm:max-w-[9rem]",
+                                  )}
+                                  onClick={() => setFolderId(c.id)}
+                                  title={c.name}
+                                >
+                                  {c.name}
+                                </button>
+                              </span>
+                            );
+                          })}
+                        </>
+                      );
+                    })()
                   ) : (
-                    <LayoutList className="h-3.5 w-3.5 shrink-0 text-[var(--muted)]" />
-                  )
-                }
-              />
-            </div>
+                    <span className="truncate font-medium text-[var(--text)]">
+                      {nav === "trash"
+                        ? dict.trash
+                        : nav === "starred"
+                          ? dict.starred
+                          : nav === "recent"
+                            ? dict.recent
+                            : dict.searchResults}
+                    </span>
+                  )}
+                </div>
+              </div>
 
-            {nav === "drive" && (
-              <>
-                <Button size="sm" variant="ghost" onClick={() => setNewFolderOpen(true)} disabled={!!busy}>
-                  <Plus className="h-4 w-4" />
-                  <span className="hidden sm:inline">{dict.newFolder}</span>
-                </Button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  multiple
-                  className="hidden"
-                  onChange={(e) => uploadFiles(e.target.files)}
-                />
-                <input
-                  ref={folderInputRef}
-                  type="file"
-                  className="hidden"
-                  // @ts-expect-error webkitdirectory is non-standard but widely supported
-                  webkitdirectory=""
-                  multiple
-                  onChange={(e) => uploadFiles(e.target.files)}
-                />
-                <Button
-                  size="sm"
-                  variant="primary"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={!!busy}
+              <div className="flex shrink-0 items-center gap-1 sm:gap-1.5">
+                <div
+                  className="inline-flex h-8 items-center rounded-lg border tc-border bg-[var(--panel)] p-0.5"
+                  role="group"
+                  aria-label={dict.viewList}
                 >
-                  <Upload className="h-4 w-4" />
-                  <span className="hidden sm:inline">{dict.upload}</span>
-                </Button>
-              </>
-            )}
+                  {(
+                    [
+                      { id: "list" as const, icon: LayoutList, label: dict.viewList },
+                      { id: "grid" as const, icon: Grid3X3, label: dict.viewGrid },
+                      { id: "compact" as const, icon: Rows3, label: dict.viewCompact },
+                    ] as const
+                  ).map(({ id, icon: Icon, label }) => (
+                    <button
+                      key={id}
+                      type="button"
+                      title={label}
+                      aria-label={label}
+                      aria-pressed={viewMode === id}
+                      className={cn(
+                        "inline-flex h-7 w-7 items-center justify-center rounded-md transition",
+                        viewMode === id
+                          ? "bg-[var(--surface-2)] text-[var(--text)] shadow-sm"
+                          : "text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--text)]",
+                      )}
+                      onClick={async () => {
+                        if (viewMode === id) return;
+                        setViewMode(id);
+                        await savePrefs({ viewMode: id });
+                      }}
+                    >
+                      <Icon className="h-3.5 w-3.5" />
+                    </button>
+                  ))}
+                </div>
 
-            <Button size="sm" variant="subtle" onClick={() => load()} title={dict.refresh} disabled={!!busy}>
-              <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-            </Button>
+                {nav === "drive" && (
+                  <>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8"
+                      onClick={() => setNewFolderOpen(true)}
+                      disabled={!!busy}
+                      title={dict.newFolder}
+                      aria-label={dict.newFolder}
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => uploadFiles(e.target.files)}
+                    />
+                    <input
+                      ref={folderInputRef}
+                      type="file"
+                      className="hidden"
+                      // @ts-expect-error webkitdirectory is non-standard but widely supported
+                      webkitdirectory=""
+                      multiple
+                      onChange={(e) => uploadFiles(e.target.files)}
+                    />
+                    <Button
+                      size="icon"
+                      variant="primary"
+                      className="h-8 w-8"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={!!busy}
+                      title={dict.upload}
+                      aria-label={dict.upload}
+                    >
+                      <Upload className="h-4 w-4" />
+                    </Button>
+                  </>
+                )}
+              </div>
+            </div>
           </header>
 
           <div className="flex flex-wrap items-center gap-1.5 border-b tc-border bg-[var(--panel)] px-3 py-1.5">
-            <div className="relative min-w-[12rem] flex-1 basis-[min(100%,18rem)]">
+            <div className="relative min-w-[10rem] flex-1 basis-[min(100%,16rem)]">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--faint)]" />
               <Input
                 className="h-8 w-full pl-8 text-xs"
@@ -1362,17 +1471,16 @@ export function DriveApp({
                   onChange={(v) => setSort(v as SortKey)}
                 />
               </div>
-              <div className="w-[6.5rem]">
-                <Select
-                  size="sm"
-                  value={dir}
-                  options={[
-                    { value: "asc", label: dict.ascending },
-                    { value: "desc", label: dict.descending },
-                  ]}
-                  onChange={(v) => setDir(v as SortDir)}
-                />
-              </div>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-8 w-8 shrink-0"
+                title={dir === "asc" ? dict.ascending : dict.descending}
+                aria-label={dir === "asc" ? dict.ascending : dict.descending}
+                onClick={() => setDir((d) => (d === "asc" ? "desc" : "asc"))}
+              >
+                {dir === "asc" ? <ArrowUpAZ className="h-4 w-4" /> : <ArrowDownAZ className="h-4 w-4" />}
+              </Button>
               <div className="w-[7.5rem]">
                 <Select
                   size="sm"

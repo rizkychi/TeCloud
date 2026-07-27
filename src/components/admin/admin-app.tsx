@@ -11,6 +11,7 @@ import {
   Files,
   Folder,
   Share2,
+  Star,
   UserCheck,
   UserX,
   Trash2,
@@ -376,20 +377,13 @@ export function AdminApp({
               </div>
             ) : tab === "dashboard" ? (
               <div className="space-y-6">
-                <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+                <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
                   <StatCard
                     icon={<Users className="h-4 w-4" />}
                     tint="sky"
                     label={dict.totalUsers}
                     value={String(stats.totals.users)}
-                    sub={`${stats.totals.activeUsers} ${dict.activeUsers} · ${stats.totals.disabledUsers} ${dict.disabledUsers}`}
-                  />
-                  <StatCard
-                    icon={<Shield className="h-4 w-4" />}
-                    tint="indigo"
-                    label={dict.admin}
-                    value={String(stats.totals.admins)}
-                    sub={`${stats.totals.users - stats.totals.admins} user`}
+                    sub={`${stats.totals.activeUsers} ${dict.userActive} · ${stats.totals.disabledUsers} ${dict.disabledUsers} · ${stats.totals.admins} ${dict.admin}`}
                   />
                   <StatCard
                     icon={<Files className="h-4 w-4" />}
@@ -410,7 +404,14 @@ export function AdminApp({
                     tint="amber"
                     label={dict.sharedFiles}
                     value={String(stats.totals.sharedFiles)}
-                    sub={`${stats.totals.starredFiles + stats.totals.starredFolders} ${dict.starred}`}
+                    sub={dict.sharedFilesHint}
+                  />
+                  <StatCard
+                    icon={<Star className="h-4 w-4" />}
+                    tint="indigo"
+                    label={dict.starred}
+                    value={String(stats.totals.starredFiles + stats.totals.starredFolders)}
+                    sub={`${stats.totals.starredFiles} ${dict.file} · ${stats.totals.starredFolders} ${dict.folder}`}
                   />
                   <StatCard
                     icon={<Folder className="h-4 w-4" />}
@@ -421,7 +422,11 @@ export function AdminApp({
                         ? "∞"
                         : formatBytes(stats.totals.defaultQuotaBytes)
                     }
-                    sub={`${stats.totals.starredFiles} ★ files`}
+                    sub={
+                      stats.totals.defaultQuotaUnlimited || stats.totals.defaultQuotaBytes === 0
+                        ? dict.quotaUnlimited
+                        : dict.defaultQuotaHint
+                    }
                   />
                 </div>
 
